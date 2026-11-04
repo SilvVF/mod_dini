@@ -3,11 +3,12 @@
 
 export interface CharacterCategory {
     "config": FolderConfig;
-    "characters"?: { [_ in string]?: CharacterFolder } | null;
+    "characters": { [_ in string]?: CharacterFolder } | null;
 }
 
 export interface CharacterFolder {
-    "sources"?: { [_ in string]?: string } | null;
+    "name": string;
+    "sources": { [_ in string]?: string } | null;
     "icon": string;
 }
 
@@ -83,9 +84,9 @@ export interface RootFolder {
     "id": string;
     "name": string;
     "config": FolderConfig;
-    "subfolders"?: { [_ in string]?: Subfolder } | null;
+    "subfolders": { [_ in string]?: Subfolder } | null;
     "characters": CharacterCategory;
-    "order"?: string[] | null;
+    "order": string[] | null;
 }
 
 export enum SortBy {
@@ -107,7 +108,7 @@ export interface Subfolder {
     "name": string;
     "custom": boolean;
     "config": FolderConfig;
-    "sources"?: string[] | null;
+    "sources": { [_ in string]?: string } | null;
 }
 
 export interface Submission {

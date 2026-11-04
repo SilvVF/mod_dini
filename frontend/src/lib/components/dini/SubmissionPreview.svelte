@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { formatDate } from "date-fns";
   import type { Submission } from "../../bindings/changeme";
   import DateDisplay from "./DateDisplay.svelte";
   import { epochSecondsToDate } from "./utils";

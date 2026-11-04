@@ -9,6 +9,7 @@ export const load: LayoutLoad = async ({ params }) => {
 
   return {
     rootFolder,
-    characters: rootFolder.characters,
+    characters: rootFolder.characters.characters ?? {},
+    subfolders: rootFolder.subfolders ?? {}
   };
 };

@@ -20,35 +20,3 @@ export const formatSize = (bytes: number) =>
   bytes >= 1024 * 1024
     ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-
-export function groupModsByCharacter(
-  mods: Record<string, ModSaved>,
-  characters: [string, CharacterFolder][],
-) {
-  const modsByCategory = new Map<string, (typeof mods)[string][]>();
-
-    for (const mod of Object.values(mods)) {
-      const key = `${mod.submission.provider}:${mod.submission.category}`;
-
-      const items = modsByCategory.get(key);
-
-      if (items) {
-        items.push(mod);
-      } else {
-        modsByCategory.set(key, [mod]);
-      }
-    }
-
-    return characters.flatMap(([name, folder]) =>
-      Object.entries(folder.sources ?? {}).map(([source, id]) => {
-        const items = modsByCategory.get(`${source}:${id}`) ?? [];
-
-        return {
-          name,
-          folder,
-          count: items.length,
-          items,
-        };
-      }),
-    );
-}

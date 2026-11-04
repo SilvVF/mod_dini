@@ -12,26 +12,27 @@ type RootFolder struct {
 	ID         string               `json:"id"`
 	Name       string               `json:"name"`
 	Config     FolderConfig         `json:"config"`
-	Subfolders map[string]Subfolder `json:"subfolders,omitempty"`
+	Subfolders map[string]Subfolder `json:"subfolders"`
 	Characters CharacterCategory    `json:"characters"`
-	Order      []string             `json:"order,omitempty"`
+	Order      []string             `json:"order"`
 }
 
 type Subfolder struct {
-	ID      string       `json:"id"`
-	Name    string       `json:"name"`
-	Custom  bool         `json:"custom"`
-	Config  FolderConfig `json:"config"`
-	Sources []string     `json:"sources,omitempty"`
+	ID      string            `json:"id"`
+	Name    string            `json:"name"`
+	Custom  bool              `json:"custom"`
+	Config  FolderConfig      `json:"config"`
+	Sources map[string]string `json:"sources"`
 }
 
 type CharacterCategory struct {
 	Config     FolderConfig               `json:"config"`
-	Characters map[string]CharacterFolder `json:"characters,omitempty"`
+	Characters map[string]CharacterFolder `json:"characters"`
 }
 
 type CharacterFolder struct {
-	Sources map[string]string `json:"sources,omitempty"`
+	Name    string            `json:"name"`
+	Sources map[string]string `json:"sources"`
 	Icon    string            `json:"icon"`
 }
 
@@ -218,7 +219,7 @@ func DefaultRootFolder(id, name string) RootFolder {
 				ID:      "weapons",
 				Name:    "Weapons",
 				Custom:  false,
-				Sources: []string{"gamebanana", "local"},
+				Sources: map[string]string{"local": "weapons"},
 				Config: FolderConfig{
 					Visible: true,
 					Sort: SortConfig{
@@ -231,7 +232,7 @@ func DefaultRootFolder(id, name string) RootFolder {
 				ID:      "others",
 				Name:    "Others",
 				Custom:  false,
-				Sources: []string{"local"},
+				Sources: map[string]string{"local": "others", "gamebanna": "29874"},
 				Config: FolderConfig{
 					Visible: true,
 					Sort: SortConfig{
