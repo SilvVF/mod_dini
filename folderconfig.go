@@ -55,8 +55,9 @@ const (
 )
 
 var (
-	ErrFolderNotFound = errors.New("root folder not found")
-	FOLDER_BUCKET     = []byte("root_folders")
+	ErrFolderNotFound         = errors.New("root folder not found")
+	ErrFolderBucketNotCreated = errors.New("folder bucket has not been created yet")
+	FOLDER_BUCKET             = []byte("root_folders")
 )
 
 type FolderStore struct {
@@ -69,7 +70,7 @@ func (s *FolderStore) Get(id string) (RootFolder, error) {
 	err := s.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(FOLDER_BUCKET)
 		if bucket == nil {
-			return ErrFolderNotFound
+			return ErrFolderBucketNotCreated
 		}
 
 		data := bucket.Get([]byte(id))
@@ -95,8 +96,8 @@ func (s *FolderStore) Save(folder RootFolder) error {
 
 	return s.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(FOLDER_BUCKET)
-		if err != nil {
-			return err
+		if bucket == nil {
+			return ErrFolderBucketNotCreated
 		}
 		return bucket.Put([]byte(folder.ID), data)
 	})
@@ -105,11 +106,9 @@ func (s *FolderStore) Save(folder RootFolder) error {
 func (s *FolderStore) Delete(id string) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(FOLDER_BUCKET)
-
-		if bucket.Get([]byte(id)) == nil {
-			return ErrFolderNotFound
+		if bucket == nil {
+			return ErrFolderBucketNotCreated
 		}
-
 		return bucket.Delete([]byte(id))
 	})
 }
@@ -126,19 +125,19 @@ func (s *FolderStore) CreateIfNotExists(
 			return err
 		}
 
-		data := bucket.Get([]byte(id))
-		if data == nil {
-			folder = DefaultRootFolder(id, name)
-			b, err := json.Marshal(folder)
-
-			if err != nil {
-				return err
-			}
-			return bucket.Put([]byte(id), b)
-		} else {
-			err = json.Unmarshal(data, &folder)
+		existing := bucket.Get([]byte(id))
+		if existing != nil {
+			err = json.Unmarshal(existing, &folder)
 			return err
 		}
+
+		folder = DefaultRootFolder(id, name)
+		data, err := json.Marshal(folder)
+		if err != nil {
+			return err
+		}
+
+		return bucket.Put([]byte(id), data)
 	})
 
 	return folder, err
@@ -147,16 +146,20 @@ func (s *FolderStore) CreateIfNotExists(
 func (s *FolderStore) Update(
 	id string,
 	update func(*RootFolder) error,
-) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+) (RootFolder, error) {
+
+	var folder RootFolder
+
+	err := s.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(FOLDER_BUCKET)
+		if bucket == nil {
+			return ErrFolderBucketNotCreated
+		}
 
 		data := bucket.Get([]byte(id))
 		if data == nil {
 			return ErrFolderNotFound
 		}
-
-		var folder RootFolder
 
 		if err := json.Unmarshal(data, &folder); err != nil {
 			return fmt.Errorf("unmarshal root folder: %w", err)
@@ -173,14 +176,16 @@ func (s *FolderStore) Update(
 
 		return bucket.Put([]byte(id), updated)
 	})
+
+	return folder, err
 }
 
 func (s *FolderStore) UpdateSubfolder(
 	rootID string,
 	subfolderID string,
 	update func(*Subfolder) error,
-) error {
-	return s.Update(rootID, func(root *RootFolder) error {
+) (Subfolder, error) {
+	root, err := s.Update(rootID, func(root *RootFolder) error {
 		subfolder, exists := root.Subfolders[subfolderID]
 		if !exists {
 			return fmt.Errorf(
@@ -197,6 +202,8 @@ func (s *FolderStore) UpdateSubfolder(
 
 		return nil
 	})
+
+	return root.Subfolders[subfolderID], err
 }
 
 func DefaultRootFolder(id, name string) RootFolder {

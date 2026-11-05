@@ -9,7 +9,7 @@
     ModSaved,
     Subfolder,
   } from "#lib/bindings/changeme/models.ts";
-  import { getSavedMods } from "#lib/contexts/saved-mods.svelte.ts";
+  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import ModCard from "#lib/components/dini/ModCard.svelte";
   import { testModRecord } from "#lib/test/mod-card-test-data.ts";
   import ModLibraryHeader from "#lib/components/dini/ModLibraryHeader.svelte";
@@ -23,18 +23,8 @@
 
   let { data }: PageProps = $props();
 
-  const subFolders = $derived(
-    Object.entries(data.subfolders).filter(
-      (entry): entry is [string, Subfolder] => entry[1] != null,
-    ),
-  );
-  const characters = $derived<[string, CharacterFolder][]>(
-    Object.entries(data.characters).filter(
-      (entry): entry is [string, CharacterFolder] => entry[1] != null,
-    ),
-  );
-
-  const saved = getSavedMods();
+  const test = true;
+  const saved = getSavedModsContext();
 
   let selected = $state<SelectedItem>({ type: "nothing", value: null });
   let selectedMod = $state<ModSaved | undefined>(undefined);
@@ -44,8 +34,15 @@
     selectedMod = undefined;
   });
 
+  const characters = $derived(Object.entries(data.characters));
+  const subfolders = $derived(Object.entries(data.subfolders));
+
   const groupedMods = $derived(
-    groupModsByFolders(testModRecord(), characters, subFolders),
+    groupModsByFolders(
+      test ? testModRecord() : saved.mods,
+      data.characters,
+      data.subfolders,
+    ),
   );
 
   const selectedGroups = $derived(
@@ -179,7 +176,7 @@
           {selected}
           image={config.game.image}
           charactersCount={characters.length}
-          subfoldersCount={subFolders.length}
+          subfoldersCount={subfolders.length}
           mods={selectedCount}
           loaded={0}
         />

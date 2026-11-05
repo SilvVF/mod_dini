@@ -47,11 +47,23 @@ export function groupBy<T, K extends PropertyKey, V>(
 
   for (const item of items) {
     const key = keySelector(item, index);
-    (result[key] ??= []).push(valueTransform ? valueTransform(item, index) : item);
+    (result[key] ??= []).push(
+      valueTransform ? valueTransform(item, index) : item,
+    );
     index++;
   }
 
   return result;
+}
+
+export function compact<T>(
+  record: Record<string, T | undefined>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      (entry): entry is [string, T] => entry[1] !== undefined,
+    ),
+  );
 }
 
 export function firstNotNullOfOrNull<T, R>(
@@ -120,7 +132,9 @@ export function setMap<T, R>(
   value: Set<T>,
   block: (value: T, index: number, set: Set<T>) => R,
 ): R[] {
-  return iterableMap(value.values(), (item, index) => block(item, index, value));
+  return iterableMap(value.values(), (item, index) =>
+    block(item, index, value),
+  );
 }
 
 function iterableMap<T, R>(

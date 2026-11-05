@@ -31,6 +31,7 @@ func init() {
 	application.RegisterEvent[map[int]ModSaved]("mods-loaded")
 	application.RegisterEvent[DataProgress]("mod-download-progress")
 	application.RegisterEvent[ModFolder]("folder-updated")
+	application.RegisterEvent[Setting]("setting-updated")
 }
 
 // main function serves as the application's entry point. It initializes the application, creates a window,
@@ -45,6 +46,16 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
+
+	settingsStore, err := NewStore(db)
+	if err != nil {
+		panic(err)
+	}
+
+	err = settingsStore.Sync(DefaultSettings())
+	if err != nil {
+		panic(err)
+	}
 
 	// Create a new Wails application by providing the necessary options.
 	// Variables 'Name' and 'Description' are for application metadata.
@@ -65,7 +76,14 @@ func main() {
 		},
 	})
 
-	app.RegisterService(application.NewService(&ModService{app: app, gbApi: GbApi{}, db: db}))
+	app.RegisterService(application.NewService(
+		&ModService{
+			app:      app,
+			gbApi:    GbApi{},
+			db:       db,
+			fs:       &FolderStore{db: db},
+			settings: settingsStore,
+		}))
 
 	// Create a new window with the necessary options.
 	// 'Title' is the title of the window.

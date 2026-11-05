@@ -37,6 +37,10 @@ export function SetModFolder(id: string): $CancellablePromise<void> {
     return $Call.ByID(3860606213, id);
 }
 
-export function Settings(): $CancellablePromise<{ [_ in string]?: $models.ModFolder } | null> {
+export function Settings(): $CancellablePromise<$models.Setting[] | null> {
     return $Call.ByID(1348616436);
+}
+
+export function UpdateSetting(key: string, change: $models.SettingChange): $CancellablePromise<void> {
+    return $Call.ByID(2072453508, key, change);
 }

@@ -9,7 +9,7 @@
   import SubmissionFilePreview from "#lib/components/dini/SubmissionFilePreview.svelte";
   import SubmissionPreview from "#lib/components/dini/SubmissionPreview.svelte";
   import Progress from "#lib/components/ui/progress/progress.svelte";
-  import { getSavedMods } from "#lib/contexts/saved-mods.svelte.ts";
+  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import { page } from "$app/state";
 
   let submission = $state<Submission>();
@@ -17,7 +17,7 @@
 
   const id = $derived(page.params.id);
 
-  const saved = getSavedMods();
+  const saved = getSavedModsContext();
   const localMod = $derived(
     Object.values(saved.mods).find(
       (v) => v.submission.slug === submission?.slug,

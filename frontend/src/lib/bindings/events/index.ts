@@ -29,6 +29,11 @@ export const ModUpdate = "mod-update";
 export const ModsLoaded = "mods-loaded";
 
 /**
+ * Name of the custom event "setting-updated".
+ */
+export const SettingUpdated = "setting-updated";
+
+/**
  * Name of the custom event "time".
  */
 export const Time = "time";

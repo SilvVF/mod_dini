@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -10,16 +11,19 @@ import (
 )
 
 type ModService struct {
-	app   *application.App
-	gbApi GbApi
-	fs    *FolderStore
-	db    *bolt.DB
+	app      *application.App
+	gbApi    GbApi
+	fs       *FolderStore
+	db       *bolt.DB
+	settings *SettingsStore
 }
 
-var DL_BUCKET = []byte("Downlods")
+var (
+	DL_BUCKET                   = []byte("Downlods")
+	ErrDownloadBucketNotCreated = errors.New("download bucket has not been created yet")
+)
 
 func (m *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
-
 	err := m.db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(DL_BUCKET)
 		return err
@@ -28,16 +32,13 @@ func (m *ModService) ServiceStartup(ctx context.Context, options application.Ser
 	if err != nil {
 		panic(err)
 	}
-	m.fs = &FolderStore{db: m.db}
-
 	m.fs.CreateIfNotExists(
 		"zzz",
 		"Zenless Zone Zero",
 	)
 
-	err = m.fs.Update("zzz", func(folder *RootFolder) error {
+	_, err = m.fs.Update("zzz", func(folder *RootFolder) error {
 		folder.Characters = ZenlessCharacters
-
 		return nil
 	})
 
@@ -45,7 +46,52 @@ func (m *ModService) ServiceStartup(ctx context.Context, options application.Ser
 		panic(err)
 	}
 
+	changes := m.settings.Changes()
+	go func() {
+		for c := range changes {
+			log.Printf("changed setting: %v", c)
+			m.app.Event.Emit("setting-updated", c)
+		}
+	}()
+
 	return nil
+}
+
+func DefaultSettings() []Setting {
+	return []Setting{
+		NewDropdown("general.language", CategoryGeneral,
+			"Language", "The language of the app's menus and messages. It changes right away.",
+			[]Option{{Value: "en", Label: "English"}, {Value: "de", Label: "Deutsch"}, {Value: "ja", Label: "日本語"}},
+			"en").WithSection("General").WithIcon("globe").WithKeywords("locale", "translation"),
+
+		NewSegmented("general.on_close", CategoryGeneral,
+			"When the window is closed", "Ask each time, keep the app running in the tray, or quit it completely.",
+			[]Option{{Value: "ask", Label: "Ask"}, {Value: "tray", Label: "Tray"}, {Value: "quit", Label: "Quit"}},
+			"ask").WithSection("General").WithIcon("x"),
+
+		NewToggle("general.hide_unconfigured_games", CategoryGeneral,
+			"Hide games that aren't set up", "Leaves games without an XXMI folder out of the game list. They come back when you turn this off.",
+			false).WithSection("General").WithIcon("layout-grid"),
+
+		NewMultiSelect("general.notifications", CategoryGeneral,
+			"Notifications", "Choose which events show a notification.",
+			[]Option{{Value: "updates", Label: "Mod updates"}, {Value: "downloads", Label: "Downloads"}, {Value: "errors", Label: "Errors"}},
+			[]string{"updates", "errors"}).WithSection("General").WithIcon("bell"),
+
+		NewSegmented("appearance.interface", CategoryAppearance,
+			"Interface", "The new look, or the Classic layout the app had before.",
+			[]Option{{Value: "modern", Label: "Modern"}, {Value: "classic", Label: "Classic"}},
+			"modern").WithSection("Appearance").WithIcon("layout-grid"),
+
+		NewDropdown("appearance.theme", CategoryAppearance,
+			"Theme", "Fine-tune colors, cards and the background in Customize.",
+			[]Option{{Value: "dark", Label: "Dark", Icon: "theme-dark"}, {Value: "light", Label: "Light", Icon: "theme-light"}},
+			"dark").WithSection("Appearance").WithIcon("palette").WithAction("customize-theme", "Customize..."),
+
+		NewToggle("appearance.performance_mode", CategoryAppearance,
+			"Performance mode", "No background picture, blur, transparency or heavy shadows. Lightest on slower PCs.",
+			false).WithSection("Appearance").WithIcon("zap"),
+	}
 }
 
 func (m *ModService) FolderConfig() (RootFolder, error) {
@@ -57,10 +103,12 @@ func (m *ModService) FolderConfig() (RootFolder, error) {
 	return f, err
 }
 
-func (m *ModService) Settings() (map[string]ModFolder, error) {
-	res := map[string]ModFolder{}
+func (m *ModService) Settings() ([]Setting, error) {
+	return m.settings.All()
+}
 
-	return res, nil
+func (m *ModService) UpdateSetting(key string, change SettingChange) error {
+	return m.settings.ApplyChange(key, change)
 }
 
 func (m *ModService) Initial() (map[string]ModSaved, error) {
@@ -69,30 +117,29 @@ func (m *ModService) Initial() (map[string]ModSaved, error) {
 
 	err := m.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(DL_BUCKET)
+		if b == nil {
+			return ErrDownloadBucketNotCreated
+		}
 		return b.ForEach(func(k, v []byte) error {
 			var mod ModSaved
 			err := json.Unmarshal(v, &mod)
 			if err != nil {
 				return err
 			}
+
 			res[string(k)] = mod
 
 			return nil
 		})
 	})
 
-	if err != nil {
-		return nil, err
-	}
-
-	log.Println(res)
-
-	return res, nil
+	return res, err
 }
 
 func (m *ModService) SetModFolder(id string) error {
 
-	path, err := m.app.Dialog.OpenFile().
+	path, err := m.app.Dialog.
+		OpenFile().
 		SetTitle("Select Folder").
 		CanChooseFiles(false).
 		CanChooseDirectories(true).
@@ -101,7 +148,7 @@ func (m *ModService) SetModFolder(id string) error {
 	if err != nil || path == "" {
 		return err
 	}
-	//todo
+
 	return nil
 }
 

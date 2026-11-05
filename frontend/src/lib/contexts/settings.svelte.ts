@@ -1,104 +1,76 @@
+import { SvelteMap } from "svelte/reactivity";
+import { ModService, type Category, type Setting, type SettingChange } from "../bindings/changeme";
 import { Events } from "@wailsio/runtime";
-import { getContext, onMount, setContext } from "svelte";
-import { ModService } from "../bindings/changeme";
-import { page } from "$app/state";
-import { goto } from "$app/navigation";
+import { getContext, setContext, untrack } from "svelte";
 
-export type FolderItem = {
-  title: string;
-  path: string;
-};
+const CONTEXT_KEY = Symbol("settings");
 
-export interface Settings {
-  activeSection: string;
-  folders: Record<string, FolderItem>;
-  query: string;
-  setFolder(id: string): void;
-  isOpen: boolean;
-  open: () => void;
-  close: () => void;
+export class SettingsState {
+  #byKey = new SvelteMap<string, Setting>();
+
+  /** Every setting in display order. */
+  all = $derived([...this.#byKey.values()].sort((a, b) => a.order - b.order));
+
+  constructor(initial: Setting[]) {
+    for (const s of initial) this.#byKey.set(s.key, s);
+  }
+
+  get(key: string): Setting | undefined {
+    return this.#byKey.get(key);
+  }
+
+  /** The effective value: the user's value, or the default when unset. */
+  current<T>(key: string): T | undefined {
+    const s = this.#byKey.get(key);
+    if (!s) return undefined;
+    return (s.value !== undefined ? s.value : s.default) as T;
+  }
+
+  inCategory(category: Category): Setting[] {
+    return this.all.filter((s) => s.category === category);
+  }
+
+  /** Replace a setting with the updated one sent by the backend. */
+  apply(setting: Setting) {
+    this.#byKey.set(setting.key, setting);
+  }
+
+  replace(settings: Setting[]) {
+    this.#byKey.clear();
+    for (const s of settings) this.#byKey.set(s.key, s);
+  }
+
+  async update(setting: Setting, change: SettingChange) {
+    await ModService.UpdateSetting(setting.key, change);
+  }
 }
 
-export function setSettings() {
-  let context = $state<Settings>({
-    isOpen: false,
-    activeSection: "",
-    query: "",
-    folders: {
-      xxmi: {
-        title: "XXMI Launcher",
-        path: "",
-      },
-      gimi: {
-        title: "Genshin Impact Mods folder",
-        path: "",
-      },
-      srmi: {
-        title: "Honkai: Star Rail Mods folder",
-        path: "",
-      },
-      zzmi: {
-        title: "Zenless Zone Zero Mods folder",
-        path: "",
-      },
-      wwmi: {
-        title: "Wuthering Waves Mods folder",
-        path: "",
-      },
-    },
-    setFolder(id) {
-      ModService.SetModFolder(id);
-    },
-    close() {
-      if (page.state.modal) {
-        goto(page.state.background ?? "/", {
-          state: {
-            modal: undefined,
-            background: undefined,
-          },
-        });
-      }
-    },
-    open() {
-      goto("/settings", {
-        state: {
-          modal: page.url.pathname !== "/settings",
-          background: page.url.pathname,
-        },
-        shallow: true,
-      });
-    },
+/**
+ * Call once from a component's script (e.g. the settings page or app root)
+ * with the full list of settings. Subscribes to the Wails change event for
+ * as long as that component is mounted.
+ */
+export function setSettingsContext(initial: () => Setting[]): SettingsState {
+  const state = new SettingsState(initial());
+
+  $effect.pre(() => {
+    const incoming = initial();
+    untrack(() => state.replace(incoming));
   });
-
-  setContext(SETTINGS_KEY, context);
-
+  
   $effect(() => {
-    context.isOpen = page.state.modal === true;
+    const unsubscribe = Events.On("setting-updated", ({ data }) =>
+      state.apply(data),
+    );
+
+    return () => {
+      unsubscribe();
+    };
   });
 
-  onMount(() => {
-    ModService.Settings().then((data) => {
-      if (!data) return;
-      for (const [id, folder] of Object.entries(data)) {
-        if (context.folders[id]) {
-          context.folders[id].path = folder?.path ?? "";
-        }
-      }
-    });
-
-    const unsubscribe = Events.On("folder-updated", ({ data }) => {
-      if (!data) return;
-      context.folders[data.id].path = data.path;
-    });
-
-    return () => unsubscribe();
-  });
-
-  return context;
+  return setContext(CONTEXT_KEY, state);
 }
 
-const SETTINGS_KEY = Symbol("settings");
-
-export function getSettings() {
-  return getContext<Settings>(SETTINGS_KEY);
+export function getSettingsContext(): SettingsState {
+  return getContext<SettingsState>(CONTEXT_KEY);
 }

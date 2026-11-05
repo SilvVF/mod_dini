@@ -18,8 +18,8 @@ export type SelectedItem =
 
 export function groupModsByFolders(
   mods: Record<string, ModSaved>,
-  characters: [string, CharacterFolder][],
-  subfolders: [string, Subfolder][],
+  characters: Record<string, CharacterFolder>,
+  subfolders: Record<string, Subfolder>,
 ): ModGroup[] {
   const modsByCategory = new Map<string, ModSaved[]>();
 
@@ -50,7 +50,7 @@ export function groupModsByFolders(
     });
 
   return [
-    ...characters.flatMap(([name, folder]) => groupBySources(name, folder)),
-    ...subfolders.flatMap(([name, folder]) => groupBySources(name, folder)),
+    ...Object.entries(characters).flatMap(([name, folder]) => groupBySources(name, folder)),
+    ...Object.entries(subfolders).flatMap(([name, folder]) => groupBySources(name, folder)),
   ];
 }

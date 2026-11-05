@@ -9,11 +9,14 @@ export {
 };
 
 export {
+    Category,
+    Kind,
     ModState,
     SortBy
 } from "./models.js";
 
 export type {
+    Action,
     CharacterCategory,
     CharacterFolder,
     DataProgress,
@@ -24,7 +27,10 @@ export type {
     ModFileTree,
     ModFolder,
     ModSaved,
+    Option,
     RootFolder,
+    Setting,
+    SettingChange,
     SortConfig,
     Subfolder,
     Submission,
