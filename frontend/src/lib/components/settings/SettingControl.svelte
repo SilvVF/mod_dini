@@ -93,6 +93,7 @@
 
 {#if setting.kind === Kind.KindToggle}
   <Switch
+    disabled={!setting.editable}
     id={titleId}
     aria-label={setting.title}
     checked={value === true}
@@ -100,7 +101,12 @@
   />
 {:else if setting.kind === Kind.KindDropdown}
   {@const TriggerIcon = options.find((o) => o.value === value)?.icon}
-  <Select type="single" value={String(value ?? "")} onValueChange={onDropdown}>
+  <Select
+    type="single"
+    value={String(value ?? "")}
+    onValueChange={onDropdown}
+    disabled={!setting.editable}
+  >
     <SelectTrigger id={titleId} aria-label={setting.title} class="w-44">
       <span class="flex items-center gap-2">
         {#if TriggerIcon}
@@ -122,6 +128,7 @@
   </Select>
 {:else if setting.kind === Kind.KindSegmented}
   <ToggleGroup
+    disabled={!setting.editable}
     type="single"
     aria-label={setting.title}
     value={String(value ?? "")}
@@ -153,6 +160,7 @@
           class="hover:bg-accent flex items-center gap-2 rounded-md px-2 py-1.5"
         >
           <Checkbox
+            disabled={!setting.editable}
             id="{titleId}-{o.value}"
             checked={selected.includes(o.value)}
             onCheckedChange={(c) => onMultiSelect(o.value, c)}
@@ -167,6 +175,7 @@
   </Popover>
 {:else if setting.kind === Kind.KindText}
   <Input
+    disabled={!setting.editable}
     id={titleId}
     aria-label={setting.title}
     class="w-56"
@@ -175,6 +184,7 @@
   />
 {:else if setting.kind === Kind.KindNumber}
   <Input
+    disabled={!setting.editable}
     id={titleId}
     aria-label={setting.title}
     type="number"

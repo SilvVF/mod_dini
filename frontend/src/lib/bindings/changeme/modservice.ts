@@ -9,6 +9,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function DefaultSettings(): $CancellablePromise<$models.Setting[] | null> {
+    return $Call.ByID(205736959);
+}
+
 export function DownloadMod(mod: $models.ModSaved, catID: string): $CancellablePromise<void> {
     return $Call.ByID(2641550483, mod, catID);
 }
@@ -25,6 +29,10 @@ export function List(p: $models.ListParams): $CancellablePromise<$models.ListPag
     return $Call.ByID(4187603957, p);
 }
 
+export function OnSettingAction(key: string, action: string): $CancellablePromise<void> {
+    return $Call.ByID(1334715178, key, action);
+}
+
 export function Page(id: number): $CancellablePromise<[$models.Submission, $models.SubmissionFile[] | null]> {
     return $Call.ByID(3964629098, id);
 }
@@ -33,8 +41,8 @@ export function Save(sub: $models.Submission, files: $models.SubmissionFile[] | 
     return $Call.ByID(1363098684, sub, files, tree);
 }
 
-export function SetModFolder(id: string): $CancellablePromise<void> {
-    return $Call.ByID(3860606213, id);
+export function SetModFolder(key: string): $CancellablePromise<void> {
+    return $Call.ByID(3860606213, key);
 }
 
 export function Settings(): $CancellablePromise<$models.Setting[] | null> {

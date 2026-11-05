@@ -50,6 +50,11 @@ func (m *ModService) DownloadMod(mod ModSaved, catID string) (err error) {
 		}
 	}()
 
+	outputDir, err := GetSetting[string](m.settings, "zzmi.folder")
+	if err != nil {
+		return err
+	}
+
 	downloadList := []SubmissionFile{}
 	for _, f := range mod.Files {
 
@@ -92,7 +97,7 @@ func (m *ModService) DownloadMod(mod ModSaved, catID string) (err error) {
 	err = ArchiveExtract(ExtractOptions{
 		ctx:       context.Background(),
 		archive:   f,
-		dst:       filepath.Join(MOD_TEST_FOLDER, dirName),
+		dst:       filepath.Join(outputDir, dirName),
 		overwrite: true,
 		onProgress: func(progress int64, total int64) {
 			m.app.Event.Emit("mod-download-progress", DataProgress{

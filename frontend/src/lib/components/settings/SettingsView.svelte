@@ -73,7 +73,10 @@
   <div
     class="grid min-h-0 flex-1 grid-cols-[11rem_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-4 px-4 pb-4"
   >
-    <nav aria-label="Settings categories" class="min-h-0 space-y-1 overflow-y-auto">
+    <nav
+      aria-label="Settings categories"
+      class="min-h-0 space-y-1 overflow-y-auto"
+    >
       {#each SettingsMeta.categories as c (c.id)}
         {@const active = !query && c.id === category}
         <button
@@ -120,7 +123,7 @@
                   {setting}
                   value={settings.current(setting.key)}
                   onchange={(v) => settings.update(setting, v)}
-                  onaction={(id) => {}}
+                  onaction={(id) => settings.action(setting, id)}
                 />
               {/each}
             </div>

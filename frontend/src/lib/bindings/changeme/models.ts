@@ -194,6 +194,7 @@ export interface Setting {
      */
     "icon"?: string;
     "kind": Kind;
+    "editable": boolean;
 
     /**
      * dropdown / segmented / multiselect
@@ -214,7 +215,7 @@ export interface Setting {
      * number
      */
     "step"?: number | null;
-    "action"?: Action | null;
+    "actions"?: Action[] | null;
 
     /**
      * Keywords feed the "Search settings..." box in addition to title/description.

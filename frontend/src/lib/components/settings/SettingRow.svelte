@@ -1,5 +1,8 @@
 <script lang="ts">
-  import type { Setting, SettingChange } from "#lib/bindings/changeme/models.ts";
+  import type {
+    Setting,
+    SettingChange,
+  } from "#lib/bindings/changeme/models.ts";
   import { Button } from "../ui/button";
   import SettingControl from "./SettingControl.svelte";
   import { SettingsMeta } from "./SettingsMeta";
@@ -42,15 +45,16 @@
 
   <div class="flex shrink-0 items-center gap-2">
     <SettingControl {setting} {value} {onchange} />
-    {#if setting.action}
-      {@const action = setting.action}
-      <Button
-        variant="outline"
-        class="font-semibold"
-        onclick={() => onaction?.(action.id)}
-      >
-        {action.label}
-      </Button>
+    {#if setting.actions}
+      {#each setting.actions as action}
+        <Button
+          variant="outline"
+          class="font-semibold"
+          onclick={() => onaction?.(action.id)}
+        >
+          {action.label}
+        </Button>
+      {/each}
     {/if}
   </div>
 </div>

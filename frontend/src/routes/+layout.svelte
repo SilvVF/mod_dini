@@ -76,7 +76,13 @@
       {#if category}
         <SettingsView
           {category}
-          onnavigate={(c) => goto(`/settings/${c}`, { replaceState: true })}
+          onnavigate={(c) => {
+            goto(`/settings/${c}`, {
+              shallow: true,
+              replace: true,
+              state: { settings: { category: c } },
+            });
+          }}
           onclose={() => history.back()}
         />
       {/if}

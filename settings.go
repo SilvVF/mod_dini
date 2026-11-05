@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"sync"
@@ -76,11 +77,13 @@ type Setting struct {
 	Icon        string   `json:"icon,omitempty"` // icon name resolved by the frontend
 	Kind        Kind     `json:"kind"`
 
+	Editable bool `json:"editable"`
+
 	Options []Option `json:"options,omitempty"` // dropdown / segmented / multiselect
 	Min     *float64 `json:"min,omitempty"`     // number
 	Max     *float64 `json:"max,omitempty"`     // number
 	Step    *float64 `json:"step,omitempty"`    // number
-	Action  *Action  `json:"action,omitempty"`
+	Actions []Action `json:"actions,omitempty"`
 
 	// Keywords feed the "Search settings..." box in addition to title/description.
 	Keywords []string `json:"keywords,omitempty"`
@@ -108,6 +111,7 @@ type SettingsStore struct {
 	// effective value. The small buffer only absorbs bursts while the listener
 	// is busy; when it is full (no listener) new events are dropped.
 	changes chan Setting
+	actions map[string]func() error
 }
 
 func NewStore(db *bbolt.DB) (*SettingsStore, error) {
@@ -118,7 +122,11 @@ func NewStore(db *bbolt.DB) (*SettingsStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SettingsStore{db: db, changes: make(chan Setting, 32)}, nil
+	return &SettingsStore{
+		db:      db,
+		changes: make(chan Setting, 32),
+		actions: make(map[string]func() error),
+	}, nil
 }
 
 // Changes returns the channel of changed settings (from SetValue and Reset).
@@ -137,6 +145,20 @@ func (st *SettingsStore) Changes() <-chan Setting { return st.changes }
 // Settings that no longer exist in defs are removed. It does not emit changes;
 // the UI loads the initial state with All().
 func (st *SettingsStore) Sync(defs []Setting) error {
+	for _, s := range defs {
+		for _, a := range s.Actions {
+			key := fmt.Sprintf("%s:%s", s.Key, a.ID)
+			if _, ok := st.actions[key]; !ok {
+				slog.Warn(
+					"setting action handler is not registered",
+					"setting", s.Key,
+					"action", a.ID,
+					"handler_key", key,
+				)
+			}
+		}
+	}
+
 	return st.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(SETTINGS_BUCKET)
 		live := make(map[string]struct{}, len(defs))
@@ -192,6 +214,15 @@ func (st *SettingsStore) All() ([]Setting, error) {
 	})
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Order < out[j].Order })
 	return out, err
+}
+
+func GetSetting[T any](st *SettingsStore, key string) (T, error) {
+	var value T
+	s, err := st.Get(key)
+	if err != nil {
+		return value, err
+	}
+	return Get[T](s)
 }
 
 func (st *SettingsStore) Get(key string) (Setting, error) {
@@ -266,6 +297,17 @@ func (s Setting) Current() json.RawMessage {
 	return s.Default
 }
 
+func (st *SettingsStore) RegisterActionHandler(settingKey string, actionKey string, handler func() error) {
+	st.actions[fmt.Sprintf("%s:%s", settingKey, actionKey)] = handler
+}
+
+func (st *SettingsStore) DoAction(skey string, action string) error {
+	if action, ok := st.actions[fmt.Sprintf("%s:%s", skey, action)]; ok && action != nil {
+		return action()
+	}
+	return fmt.Errorf("actions not registerd in store for setting: %s, action: %s", skey, action)
+}
+
 // Get decodes the current value, e.g. Get[bool](s) or Get[[]string](s).
 func Get[T any](s Setting) (T, error) {
 	var v T
@@ -277,25 +319,40 @@ func (s Setting) hasOption(v string) bool {
 	return slices.ContainsFunc(s.Options, func(o Option) bool { return o.Value == v })
 }
 
-func (st *SettingsStore) ApplyChange(key string, change SettingChange) error {
+func SetValueOf[T any](st *SettingsStore, key string, kind Kind, v T) (Setting, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return Setting{}, err
+	}
 
-	_, err := st.update(key, func(s *Setting) error {
+	return st.SetValue(key, SettingChange{
+		Kind:  kind,
+		Value: raw,
+	})
+}
+
+func (st *SettingsStore) SetValue(key string, change SettingChange) (Setting, error) {
+	return st.update(key, func(s *Setting) error {
 
 		if change.Kind != s.Kind {
 			return fmt.Errorf("%v change is not valid for %v", change.Kind, s.Kind)
 		}
 
-		err := s.validateValue(change.Value)
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, change.Value); err != nil {
+			return fmt.Errorf("invalid JSON: %w", err)
+		}
+		value := json.RawMessage(compact.Bytes())
+
+		err := s.validateValue(value)
 		if err != nil {
 			return err
 		}
 
-		s.Value = change.Value
+		s.Value = value
 
 		return nil
 	})
-
-	return err
 }
 
 // ValidateValue checks that raw has the right shape for the setting's Kind.
@@ -374,7 +431,7 @@ func mustJSON(v any) json.RawMessage {
 }
 
 func newSetting(key string, c Category, kind Kind, title, desc string, def any) Setting {
-	return Setting{Key: key, Category: c, Kind: kind, Title: title, Description: desc, Default: mustJSON(def)}
+	return Setting{Key: key, Category: c, Kind: kind, Title: title, Description: desc, Editable: true, Default: mustJSON(def)}
 }
 
 func NewToggle(key string, c Category, title, desc string, def bool) Setting {
@@ -418,6 +475,12 @@ func (s Setting) WithSection(name string) Setting  { s.Section = name; return s 
 func (s Setting) WithIcon(icon string) Setting     { s.Icon = icon; return s }
 func (s Setting) WithKeywords(k ...string) Setting { s.Keywords = k; return s }
 func (s Setting) WithAction(id, label string) Setting {
-	s.Action = &Action{ID: id, Label: label}
+	s.Actions = append(s.Actions, Action{ID: id, Label: label})
 	return s
 }
+func (s Setting) WithActionHandler(store *SettingsStore, id, label string, handler func() error) Setting {
+	store.RegisterActionHandler(s.Key, id, handler)
+	s.Actions = append(s.Actions, Action{ID: id, Label: label})
+	return s
+}
+func (s Setting) MakeUneditable() Setting { s.Editable = false; return s }

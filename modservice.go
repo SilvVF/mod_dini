@@ -24,14 +24,19 @@ var (
 )
 
 func (m *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
-	err := m.db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(DL_BUCKET)
-		return err
-	})
-
+	err := m.settings.Sync(m.DefaultSettings())
 	if err != nil {
 		panic(err)
 	}
+
+	err = m.db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(DL_BUCKET)
+		return err
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	m.fs.CreateIfNotExists(
 		"zzz",
 		"Zenless Zone Zero",
@@ -57,43 +62,6 @@ func (m *ModService) ServiceStartup(ctx context.Context, options application.Ser
 	return nil
 }
 
-func DefaultSettings() []Setting {
-	return []Setting{
-		NewDropdown("general.language", CategoryGeneral,
-			"Language", "The language of the app's menus and messages. It changes right away.",
-			[]Option{{Value: "en", Label: "English"}, {Value: "de", Label: "Deutsch"}, {Value: "ja", Label: "日本語"}},
-			"en").WithSection("General").WithIcon("globe").WithKeywords("locale", "translation"),
-
-		NewSegmented("general.on_close", CategoryGeneral,
-			"When the window is closed", "Ask each time, keep the app running in the tray, or quit it completely.",
-			[]Option{{Value: "ask", Label: "Ask"}, {Value: "tray", Label: "Tray"}, {Value: "quit", Label: "Quit"}},
-			"ask").WithSection("General").WithIcon("x"),
-
-		NewToggle("general.hide_unconfigured_games", CategoryGeneral,
-			"Hide games that aren't set up", "Leaves games without an XXMI folder out of the game list. They come back when you turn this off.",
-			false).WithSection("General").WithIcon("layout-grid"),
-
-		NewMultiSelect("general.notifications", CategoryGeneral,
-			"Notifications", "Choose which events show a notification.",
-			[]Option{{Value: "updates", Label: "Mod updates"}, {Value: "downloads", Label: "Downloads"}, {Value: "errors", Label: "Errors"}},
-			[]string{"updates", "errors"}).WithSection("General").WithIcon("bell"),
-
-		NewSegmented("appearance.interface", CategoryAppearance,
-			"Interface", "The new look, or the Classic layout the app had before.",
-			[]Option{{Value: "modern", Label: "Modern"}, {Value: "classic", Label: "Classic"}},
-			"modern").WithSection("Appearance").WithIcon("layout-grid"),
-
-		NewDropdown("appearance.theme", CategoryAppearance,
-			"Theme", "Fine-tune colors, cards and the background in Customize.",
-			[]Option{{Value: "dark", Label: "Dark", Icon: "theme-dark"}, {Value: "light", Label: "Light", Icon: "theme-light"}},
-			"dark").WithSection("Appearance").WithIcon("palette").WithAction("customize-theme", "Customize..."),
-
-		NewToggle("appearance.performance_mode", CategoryAppearance,
-			"Performance mode", "No background picture, blur, transparency or heavy shadows. Lightest on slower PCs.",
-			false).WithSection("Appearance").WithIcon("zap"),
-	}
-}
-
 func (m *ModService) FolderConfig() (RootFolder, error) {
 	f, err := m.fs.Get("zzz")
 
@@ -107,8 +75,13 @@ func (m *ModService) Settings() ([]Setting, error) {
 	return m.settings.All()
 }
 
+func (m *ModService) OnSettingAction(key string, action string) error {
+	return m.settings.DoAction(key, action)
+}
+
 func (m *ModService) UpdateSetting(key string, change SettingChange) error {
-	return m.settings.ApplyChange(key, change)
+	_, err := m.settings.SetValue(key, change)
+	return err
 }
 
 func (m *ModService) Initial() (map[string]ModSaved, error) {
@@ -136,7 +109,7 @@ func (m *ModService) Initial() (map[string]ModSaved, error) {
 	return res, err
 }
 
-func (m *ModService) SetModFolder(id string) error {
+func (m *ModService) SetModFolder(key string) error {
 
 	path, err := m.app.Dialog.
 		OpenFile().
@@ -149,7 +122,8 @@ func (m *ModService) SetModFolder(id string) error {
 		return err
 	}
 
-	return nil
+	_, err = SetValueOf(m.settings, key, KindText, path)
+	return err
 }
 
 func (m *ModService) Save(sub Submission, files []SubmissionFile, tree ModFileTree) error {
@@ -242,5 +216,65 @@ func (m *ModService) List(p ListParams) (ListPage, error) {
 		return lp, nil
 	} else {
 		return lp, nil
+	}
+}
+
+func (m *ModService) DefaultSettings() []Setting {
+	return []Setting{
+		NewText("zzmi.folder", CategoryFolders, "ZenlessZoneZero Mods Folder", "", "").
+			WithIcon("folder").
+			WithActionHandler(m.settings, "change.zzmi", "Change", func() error {
+				return m.SetModFolder("zzmi.folder")
+			}).
+			WithAction("zzmi.xxmi", "Use XXMI's").
+			MakeUneditable(),
+		NewDropdown(
+			"general.language",
+			CategoryGeneral,
+			"Language",
+			"The language of the app's menus and messages. It changes right away.",
+			[]Option{{Value: "en", Label: "English"}, {Value: "de", Label: "Deutsch"},
+				{Value: "ja", Label: "日本語"}},
+			"en",
+		).
+			WithSection("General").
+			WithIcon("globe").
+			WithKeywords("locale", "translation"),
+		NewSegmented(
+			"general.on_close",
+			CategoryGeneral,
+			"When the window is closed",
+			"Ask each time, keep the app running in the tray, or quit it completely.",
+			[]Option{{Value: "ask", Label: "Ask"}, {Value: "tray", Label: "Tray"},
+				{Value: "quit", Label: "Quit"}},
+			"ask",
+		).WithSection("General").WithIcon("x"),
+
+		NewToggle(
+			"general.hide_unconfigured_games",
+			CategoryGeneral,
+			"Hide games that aren't set up",
+			"Leaves games without an XXMI folder out of the game list. They come back when you turn this off.",
+			false,
+		).WithSection("General").WithIcon("layout-grid"),
+
+		NewMultiSelect("general.notifications", CategoryGeneral,
+			"Notifications", "Choose which events show a notification.",
+			[]Option{{Value: "updates", Label: "Mod updates"}, {Value: "downloads", Label: "Downloads"}, {Value: "errors", Label: "Errors"}},
+			[]string{"updates", "errors"}).WithSection("General").WithIcon("bell"),
+
+		NewSegmented("appearance.interface", CategoryAppearance,
+			"Interface", "The new look, or the Classic layout the app had before.",
+			[]Option{{Value: "modern", Label: "Modern"}, {Value: "classic", Label: "Classic"}},
+			"modern").WithSection("Appearance").WithIcon("layout-grid"),
+
+		NewDropdown("appearance.theme", CategoryAppearance,
+			"Theme", "Fine-tune colors, cards and the background in Customize.",
+			[]Option{{Value: "dark", Label: "Dark", Icon: "theme-dark"}, {Value: "light", Label: "Light", Icon: "theme-light"}},
+			"dark").WithSection("Appearance").WithIcon("palette"),
+
+		NewToggle("appearance.performance_mode", CategoryAppearance,
+			"Performance mode", "No background picture, blur, transparency or heavy shadows. Lightest on slower PCs.",
+			false).WithSection("Appearance").WithIcon("zap"),
 	}
 }

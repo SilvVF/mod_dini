@@ -52,11 +52,6 @@ func main() {
 		panic(err)
 	}
 
-	err = settingsStore.Sync(DefaultSettings())
-	if err != nil {
-		panic(err)
-	}
-
 	// Create a new Wails application by providing the necessary options.
 	// Variables 'Name' and 'Description' are for application metadata.
 	// 'Assets' configures the asset server with the 'FS' variable pointing to the frontend files.

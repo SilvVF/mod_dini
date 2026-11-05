@@ -1,5 +1,11 @@
 import { SvelteMap } from "svelte/reactivity";
-import { ModService, type Category, type Setting, type SettingChange } from "../bindings/changeme";
+import {
+  ModService,
+  type Action,
+  type Category,
+  type Setting,
+  type SettingChange,
+} from "../bindings/changeme";
 import { Events } from "@wailsio/runtime";
 import { getContext, setContext, untrack } from "svelte";
 
@@ -40,6 +46,10 @@ export class SettingsState {
     for (const s of settings) this.#byKey.set(s.key, s);
   }
 
+  async action(setting: Setting, actionId: string) {
+    await ModService.OnSettingAction(setting.key, actionId);
+  }
+
   async update(setting: Setting, change: SettingChange) {
     await ModService.UpdateSetting(setting.key, change);
   }
@@ -57,7 +67,7 @@ export function setSettingsContext(initial: () => Setting[]): SettingsState {
     const incoming = initial();
     untrack(() => state.replace(incoming));
   });
-  
+
   $effect(() => {
     const unsubscribe = Events.On("setting-updated", ({ data }) =>
       state.apply(data),
