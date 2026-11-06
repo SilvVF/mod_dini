@@ -21,7 +21,6 @@ export type {
     CharacterFolder,
     DataProgress,
     FolderConfig,
-    ListPage,
     ListParams,
     ManifestEntry,
     ModSaved,
@@ -32,5 +31,7 @@ export type {
     SortConfig,
     Subfolder,
     Submission,
-    SubmissionFile
+    SubmissionFile,
+    SubmissionList,
+    SubmissionPage
 } from "./models.js";

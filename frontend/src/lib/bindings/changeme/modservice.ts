@@ -37,7 +37,7 @@ export function Initial(): $CancellablePromise<{ [_ in string]?: $models.ModSave
     return $Call.ByID(2814493079);
 }
 
-export function List(p: $models.ListParams): $CancellablePromise<$models.ListPage> {
+export function List(p: $models.ListParams): $CancellablePromise<$models.SubmissionList> {
     return $Call.ByID(4187603957, p);
 }
 
@@ -45,16 +45,12 @@ export function OnSettingAction(key: string, action: string): $CancellablePromis
     return $Call.ByID(1334715178, key, action);
 }
 
-export function Page(id: number): $CancellablePromise<[$models.Submission, $models.SubmissionFile[] | null]> {
-    return $Call.ByID(3964629098, id);
+export function Page(providerId: string, pageId: string): $CancellablePromise<$models.SubmissionPage> {
+    return $Call.ByID(3964629098, providerId, pageId);
 }
 
 export function Save(sub: $models.Submission, files: $models.SubmissionFile[] | null, selected: $models.Pack[] | null): $CancellablePromise<void> {
     return $Call.ByID(1363098684, sub, files, selected);
-}
-
-export function SetModFolder(key: string, reset: boolean): $CancellablePromise<void> {
-    return $Call.ByID(3860606213, key, reset);
 }
 
 export function Settings(): $CancellablePromise<$models.Setting[] | null> {

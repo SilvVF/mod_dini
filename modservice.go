@@ -13,11 +13,12 @@ import (
 )
 
 type ModService struct {
-	app      *application.App
-	gbApi    GbApi
-	fs       *FolderStore
-	db       *bolt.DB
-	settings *SettingsStore
+	app       *application.App
+	providers ProviderRegistry
+	gbApi     GbApi
+	fs        *FolderStore
+	db        *bolt.DB
+	settings  *SettingsStore
 }
 
 func (ms *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
@@ -106,7 +107,7 @@ func (ms *ModService) Initial() (map[string]ModSaved, error) {
 	return res, err
 }
 
-func (ms *ModService) SetModFolder(key string, reset bool) error {
+func (ms *ModService) setModFolder(key string, reset bool) error {
 	if reset {
 		path, err := GetSetting[string](ms.settings, "xxmi.folder")
 		if err != nil || path == "" {
@@ -191,104 +192,94 @@ func (ms *ModService) Save(sub Submission, files []SubmissionFile, selected []Pa
 
 	ms.app.Event.Emit("mod-update", mod)
 
-	return ms.DownloadMod(mod)
+	go ms.DownloadMod(mod)
+
+	return nil
 }
 
-func (ms *ModService) Page(id int) (Submission, []SubmissionFile, error) {
-	res, err := ms.gbApi.ModPage(id)
+func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
+	prov, err := ms.providers.Get(providerId)
 	if err != nil {
-		return Submission{}, nil, err
+		return SubmissionPage{}, err
 	}
 
-	s, files := MapModPageResponse(res)
-
-	return s, files, nil
+	return prov.Page(context.Background(), pageId)
 }
 
-type ListParams struct {
-	Provider string `json:"provider"`
-	Cat      string `json:"cat"`
-	Page     int    `json:"page"`
-}
+func (ms *ModService) List(p ListParams) (SubmissionList, error) {
+	log.Println("list params", p)
 
-type ListPage struct {
-	Submissions []Submission `json:"submissions"`
-	HasNext     bool         `json:"hasNext"`
-	Next        int          `json:"next"`
-	Prev        int          `json:"prev"`
-}
-
-func (ms *ModService) List(p ListParams) (ListPage, error) {
-	q := NewCategoryQuery()
-	q.Page = max(p.Page, 1)
-	q.ID = p.Cat
-	q.Sort = MostLiked
-	q.PerPage = 50
-
-	log.Println("list results ", p)
-	lp := ListPage{}
-
-	if p.Provider == "gamebanana" {
-		res, err := ms.gbApi.CategoryContent(q)
-		if err != nil {
-			return ListPage{}, err
-		}
-
-		submissions := make([]Submission, len(res.ARecords))
-		for i, record := range res.ARecords {
-			submissions[i] = MapCategoryRecord(record)
-		}
-
-		lp.Submissions = submissions
-		lp.Next = min(q.Page+1, res.AMetadata.NRecordCount/res.AMetadata.NPerpage)
-		lp.Prev = max(q.Page-1, 1)
-		lp.HasNext = lp.Next != q.Page
-
-		return lp, nil
-	} else {
-		return lp, nil
+	prov, err := ms.providers.Get(p.Provider)
+	if err != nil {
+		return SubmissionList{}, err
 	}
+
+	return prov.List(context.Background(), p)
 }
 
 func (ms *ModService) DefaultSettings() []Setting {
 	return []Setting{
-		NewText("zzmi.folder", CategoryFolders, "ZenlessZoneZero Mods Folder", "", "").
+		NewText(
+			"zzmi.folder",
+			CategoryFolders,
+			"ZenlessZoneZero Mods Folder",
+			"",
+			"",
+		).
 			WithIcon("folder").
 			WithActionHandler(ms.settings, "change.zzmi", "Change", func() error {
-				return ms.SetModFolder("zzmi.folder", false)
+				return ms.setModFolder("zzmi.folder", false)
 			}).
 			WithActionHandler(ms.settings, "zzmi.xxmi", "Use XXMI's", func() error {
-				return ms.SetModFolder("zzmi.folder", true)
+				return ms.setModFolder("zzmi.folder", true)
 			}).
 			MakeUneditable(),
-		NewText("xxmi.folder", CategoryFolders, "XXMI Launcher", "", "").
+
+		NewText(
+			"xxmi.folder",
+			CategoryFolders,
+			"XXMI Launcher",
+			"",
+			"",
+		).
 			WithIcon("folder").
 			WithActionHandler(ms.settings, "change.xxmi", "Change", func() error {
-				return ms.SetModFolder("xxmi.folder", false)
+				return ms.setModFolder("xxmi.folder", false)
 			}).
 			WithAction("zzmi.xxmi", "Use XXMI's").
 			MakeUneditable(),
+
+		// ---- General ----
 		NewDropdown(
 			"general.language",
 			CategoryGeneral,
 			"Language",
 			"The language of the app's menus and messages. It changes right away.",
-			[]Option{{Value: "en", Label: "English"}, {Value: "de", Label: "Deutsch"},
-				{Value: "ja", Label: "日本語"}},
+			[]Option{
+				{Value: "en", Label: "English"},
+				{Value: "de", Label: "Deutsch"},
+				{Value: "ja", Label: "日本語"},
+			},
 			"en",
 		).
 			WithSection("General").
 			WithIcon("globe").
 			WithKeywords("locale", "translation"),
+
 		NewSegmented(
 			"general.on_close",
 			CategoryGeneral,
 			"When the window is closed",
 			"Ask each time, keep the app running in the tray, or quit it completely.",
-			[]Option{{Value: "ask", Label: "Ask"}, {Value: "tray", Label: "Tray"},
-				{Value: "quit", Label: "Quit"}},
+			[]Option{
+				{Value: "ask", Label: "Ask"},
+				{Value: "tray", Label: "Tray"},
+				{Value: "quit", Label: "Quit"},
+			},
 			"ask",
-		).WithSection("General").WithIcon("x"),
+		).
+			WithSection("General").
+			WithIcon("x"),
 
 		NewToggle(
 			"general.hide_unconfigured_games",
@@ -296,25 +287,62 @@ func (ms *ModService) DefaultSettings() []Setting {
 			"Hide games that aren't set up",
 			"Leaves games without an XXMI folder out of the game list. They come back when you turn this off.",
 			false,
-		).WithSection("General").WithIcon("layout-grid"),
+		).
+			WithSection("General").
+			WithIcon("layout-grid"),
 
-		NewMultiSelect("general.notifications", CategoryGeneral,
-			"Notifications", "Choose which events show a notification.",
-			[]Option{{Value: "updates", Label: "Mod updates"}, {Value: "downloads", Label: "Downloads"}, {Value: "errors", Label: "Errors"}},
-			[]string{"updates", "errors"}).WithSection("General").WithIcon("bell"),
+		NewMultiSelect(
+			"general.notifications",
+			CategoryGeneral,
+			"Notifications",
+			"Choose which events show a notification.",
+			[]Option{
+				{Value: "updates", Label: "Mod updates"},
+				{Value: "downloads", Label: "Downloads"},
+				{Value: "errors", Label: "Errors"},
+			},
+			[]string{"updates", "errors"},
+		).
+			WithSection("General").
+			WithIcon("bell"),
 
-		NewSegmented("appearance.interface", CategoryAppearance,
-			"Interface", "The new look, or the Classic layout the app had before.",
-			[]Option{{Value: "modern", Label: "Modern"}, {Value: "classic", Label: "Classic"}},
-			"modern").WithSection("Appearance").WithIcon("layout-grid"),
+		// ---- Appearance ----
+		NewSegmented(
+			"appearance.interface",
+			CategoryAppearance,
+			"Interface",
+			"The new look, or the Classic layout the app had before.",
+			[]Option{
+				{Value: "modern", Label: "Modern"},
+				{Value: "classic", Label: "Classic"},
+			},
+			"modern",
+		).
+			WithSection("Appearance").
+			WithIcon("layout-grid"),
 
-		NewDropdown("appearance.theme", CategoryAppearance,
-			"Theme", "Fine-tune colors, cards and the background in Customize.",
-			[]Option{{Value: "dark", Label: "Dark", Icon: "theme-dark"}, {Value: "light", Label: "Light", Icon: "theme-light"}},
-			"dark").WithSection("Appearance").WithIcon("palette"),
+		NewDropdown(
+			"appearance.theme",
+			CategoryAppearance,
+			"Theme",
+			"Fine-tune colors, cards and the background in Customize.",
+			[]Option{
+				{Value: "dark", Label: "Dark", Icon: "theme-dark"},
+				{Value: "light", Label: "Light", Icon: "theme-light"},
+			},
+			"dark",
+		).
+			WithSection("Appearance").
+			WithIcon("palette"),
 
-		NewToggle("appearance.performance_mode", CategoryAppearance,
-			"Performance mode", "No background picture, blur, transparency or heavy shadows. Lightest on slower PCs.",
-			false).WithSection("Appearance").WithIcon("zap"),
+		NewToggle(
+			"appearance.performance_mode",
+			CategoryAppearance,
+			"Performance mode",
+			"No background picture, blur, transparency or heavy shadows. Lightest on slower PCs.",
+			false,
+		).
+			WithSection("Appearance").
+			WithIcon("zap"),
 	}
 }

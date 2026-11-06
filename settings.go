@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"sync"
@@ -62,8 +64,9 @@ type SettingChange struct {
 // Action is an extra button shown on a row (e.g. "Customize..." next to Theme).
 // The UI reports the click back using ID; it carries no value.
 type Action struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Source string `json:"-"`
 }
 
 // Setting is one row in the settings screen.
@@ -93,6 +96,7 @@ type Setting struct {
 	// Default and Value hold JSON matching Kind. Value is empty until the user changes it.
 	Default json.RawMessage `json:"default"`
 	Value   json.RawMessage `json:"value,omitempty"`
+	Source  string          `json:"-"`
 }
 
 var SETTINGS_BUCKET = []byte("settings")
@@ -110,8 +114,9 @@ type SettingsStore struct {
 	// changes receives the updated Setting after every write that changed its
 	// effective value. The small buffer only absorbs bursts while the listener
 	// is busy; when it is full (no listener) new events are dropped.
-	changes chan Setting
-	actions map[string]func() error
+	changes       chan Setting
+	actions       map[string]func() error
+	actionSources map[string]string
 }
 
 func NewStore(db *bbolt.DB) (*SettingsStore, error) {
@@ -123,9 +128,10 @@ func NewStore(db *bbolt.DB) (*SettingsStore, error) {
 		return nil, err
 	}
 	return &SettingsStore{
-		db:      db,
-		changes: make(chan Setting, 32),
-		actions: make(map[string]func() error),
+		db:            db,
+		changes:       make(chan Setting, 32),
+		actions:       make(map[string]func() error),
+		actionSources: make(map[string]string),
 	}, nil
 }
 
@@ -139,25 +145,54 @@ func NewStore(db *bbolt.DB) (*SettingsStore, error) {
 //	}()
 func (st *SettingsStore) Changes() <-chan Setting { return st.changes }
 
+func checkUniqueKeys(defs []Setting) {
+	seen := make(map[string]Setting, len(defs))
+
+	for _, s := range defs {
+		if s.Key == "" {
+			panic(fmt.Sprintf("setting with empty key defined at %s", s.Source))
+		}
+		if prev, ok := seen[s.Key]; ok {
+			panic(fmt.Sprintf(
+				"duplicate setting key %q\n  first defined at %s\n  defined again at %s",
+				s.Key, prev.Source, s.Source,
+			))
+		}
+		seen[s.Key] = s
+	}
+}
+
+func (st *SettingsStore) checkActions(defs []Setting) {
+	for _, s := range defs {
+		seen := make(map[string]string, len(s.Actions)) // action id -> source
+
+		for _, a := range s.Actions {
+			if prevSrc, dup := seen[a.ID]; dup {
+				panic(fmt.Sprintf(
+					"duplicate action %q on setting %q\n  first defined at %s\n  defined again at %s",
+					a.ID, s.Key, prevSrc, a.Source,
+				))
+			}
+			seen[a.ID] = a.Source
+
+			key := fmt.Sprintf("%s:%s", s.Key, a.ID)
+			if _, ok := st.actions[key]; !ok {
+				slog.Warn(
+					fmt.Sprintf("action handler not register for %s %s \n\t handlerKey %s \n\t defined at %s", s.Key, a.ID, key, a.Source),
+				)
+			}
+		}
+	}
+}
+
 // Sync reconciles the stored settings with the definitions shipped in code.
 // Call it once at startup. The definition wins for everything (title, options,
 // order, ...) except the user's Value, which is kept when it is still valid.
 // Settings that no longer exist in defs are removed. It does not emit changes;
 // the UI loads the initial state with All().
 func (st *SettingsStore) Sync(defs []Setting) error {
-	for _, s := range defs {
-		for _, a := range s.Actions {
-			key := fmt.Sprintf("%s:%s", s.Key, a.ID)
-			if _, ok := st.actions[key]; !ok {
-				slog.Warn(
-					"setting action handler is not registered",
-					"setting", s.Key,
-					"action", a.ID,
-					"handler_key", key,
-				)
-			}
-		}
-	}
+	checkUniqueKeys(defs)
+	st.checkActions(defs)
 
 	return st.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(SETTINGS_BUCKET)
@@ -297,10 +332,6 @@ func (s Setting) Current() json.RawMessage {
 	return s.Default
 }
 
-func (st *SettingsStore) RegisterActionHandler(settingKey string, actionKey string, handler func() error) {
-	st.actions[fmt.Sprintf("%s:%s", settingKey, actionKey)] = handler
-}
-
 func (st *SettingsStore) DoAction(skey string, action string) error {
 	if action, ok := st.actions[fmt.Sprintf("%s:%s", skey, action)]; ok && action != nil {
 		return action()
@@ -423,8 +454,55 @@ func mustJSON(v any) json.RawMessage {
 	return b
 }
 
+func callerLocation(skip int) string {
+	_, file, line, ok := runtime.Caller(skip + 1)
+	if !ok {
+		return "unknown"
+	}
+	return fmt.Sprintf("%s:%d", filepath.Base(file), line)
+}
+
+func (st *SettingsStore) RegisterActionHandler(settingKey, actionKey string, handler func() error) {
+	st.registerActionHandler(settingKey, actionKey, handler, callerLocation(1))
+}
+
+func (st *SettingsStore) registerActionHandler(settingKey, actionKey string, handler func() error, source string) {
+	key := fmt.Sprintf("%s:%s", settingKey, actionKey)
+
+	if prev, ok := st.actionSources[key]; ok {
+		panic(fmt.Sprintf(
+			"duplicate action handler %q\n  first registered at %s\n  registered again at %s",
+			key, prev, source,
+		))
+	}
+
+	st.actions[key] = handler
+	st.actionSources[key] = source
+}
+
+func (s Setting) WithAction(id, label string) Setting {
+	s.Actions = append(s.Actions, Action{ID: id, Label: label, Source: callerLocation(1)})
+	return s
+}
+
+func (s Setting) WithActionHandler(store *SettingsStore, id, label string, handler func() error) Setting {
+	src := callerLocation(1) // the line in DefaultSettings
+	store.registerActionHandler(s.Key, id, handler, src)
+	s.Actions = append(s.Actions, Action{ID: id, Label: label, Source: src})
+	return s
+}
+
 func newSetting(key string, c Category, kind Kind, title, desc string, def any) Setting {
-	return Setting{Key: key, Category: c, Kind: kind, Title: title, Description: desc, Editable: true, Default: mustJSON(def)}
+	return Setting{
+		Key:         key,
+		Category:    c,
+		Kind:        kind,
+		Title:       title,
+		Description: desc,
+		Editable:    true,
+		Default:     mustJSON(def),
+		Source:      callerLocation(2),
+	}
 }
 
 func NewToggle(key string, c Category, title, desc string, def bool) Setting {
@@ -467,13 +545,4 @@ func NewNumber(key string, c Category, title, desc string, def, min, max, step f
 func (s Setting) WithSection(name string) Setting  { s.Section = name; return s }
 func (s Setting) WithIcon(icon string) Setting     { s.Icon = icon; return s }
 func (s Setting) WithKeywords(k ...string) Setting { s.Keywords = k; return s }
-func (s Setting) WithAction(id, label string) Setting {
-	s.Actions = append(s.Actions, Action{ID: id, Label: label})
-	return s
-}
-func (s Setting) WithActionHandler(store *SettingsStore, id, label string, handler func() error) Setting {
-	store.RegisterActionHandler(s.Key, id, handler)
-	s.Actions = append(s.Actions, Action{ID: id, Label: label})
-	return s
-}
-func (s Setting) MakeUneditable() Setting { s.Editable = false; return s }
+func (s Setting) MakeUneditable() Setting          { s.Editable = false; return s }

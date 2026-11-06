@@ -117,13 +117,6 @@ export enum Kind {
     KindNumber = "number",
 };
 
-export interface ListPage {
-    "submissions": Submission[] | null;
-    "hasNext": boolean;
-    "next": number;
-    "prev": number;
-}
-
 export interface ListParams {
     "provider": string;
     "cat": string;
@@ -311,4 +304,16 @@ export interface SubmissionFile {
     "clamAvResult": string;
     "avastAvResult": string;
     "addedAt": number;
+}
+
+export interface SubmissionList {
+    "submissions": Submission[] | null;
+    "hasNext": boolean;
+    "next": number;
+    "prev": number;
+}
+
+export interface SubmissionPage {
+    "submission": Submission;
+    "submissionFiles": SubmissionFile[] | null;
 }
