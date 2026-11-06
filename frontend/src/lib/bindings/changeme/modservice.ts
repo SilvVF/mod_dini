@@ -7,14 +7,26 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as json$0 from "../encoding/json/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 export function DefaultSettings(): $CancellablePromise<$models.Setting[] | null> {
     return $Call.ByID(205736959);
 }
 
-export function DownloadMod(mod: $models.ModSaved, catID: string): $CancellablePromise<void> {
-    return $Call.ByID(2641550483, mod, catID);
+export function DownloadMod(mod: $models.ModSaved): $CancellablePromise<void> {
+    return $Call.ByID(2641550483, mod);
+}
+
+export function EmitDownloadProgress(mod: $models.ModSaved, pkg: $models.Pack, total: number, progress: number): $CancellablePromise<boolean> {
+    return $Call.ByID(2400628177, mod, pkg, total, progress);
+}
+
+export function EnablePacks(modId: string, ids: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1887951704, modId, ids);
 }
 
 export function FolderConfig(): $CancellablePromise<$models.RootFolder> {
@@ -37,18 +49,22 @@ export function Page(id: number): $CancellablePromise<[$models.Submission, $mode
     return $Call.ByID(3964629098, id);
 }
 
-export function Save(sub: $models.Submission, files: $models.SubmissionFile[] | null, tree: $models.ModFileTree): $CancellablePromise<void> {
-    return $Call.ByID(1363098684, sub, files, tree);
+export function Save(sub: $models.Submission, files: $models.SubmissionFile[] | null, selected: $models.Pack[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1363098684, sub, files, selected);
 }
 
-export function SetModFolder(key: string): $CancellablePromise<void> {
-    return $Call.ByID(3860606213, key);
+export function SetModFolder(key: string, reset: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3860606213, key, reset);
 }
 
 export function Settings(): $CancellablePromise<$models.Setting[] | null> {
     return $Call.ByID(1348616436);
 }
 
-export function UpdateSetting(key: string, change: $models.SettingChange): $CancellablePromise<void> {
-    return $Call.ByID(2072453508, key, change);
+export function ToolDir(tool: string): $CancellablePromise<string> {
+    return $Call.ByID(1991256346, tool);
+}
+
+export function UpdateSetting(key: string, value: json$0.RawMessage): $CancellablePromise<void> {
+    return $Call.ByID(2072453508, key, value);
 }

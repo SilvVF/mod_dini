@@ -319,27 +319,20 @@ func (s Setting) hasOption(v string) bool {
 	return slices.ContainsFunc(s.Options, func(o Option) bool { return o.Value == v })
 }
 
-func SetValueOf[T any](st *SettingsStore, key string, kind Kind, v T) (Setting, error) {
+func SetValueOf[T any](st *SettingsStore, key string, v T) (Setting, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return Setting{}, err
 	}
 
-	return st.SetValue(key, SettingChange{
-		Kind:  kind,
-		Value: raw,
-	})
+	return st.SetValue(key, raw)
 }
 
-func (st *SettingsStore) SetValue(key string, change SettingChange) (Setting, error) {
+func (st *SettingsStore) SetValue(key string, change json.RawMessage) (Setting, error) {
 	return st.update(key, func(s *Setting) error {
 
-		if change.Kind != s.Kind {
-			return fmt.Errorf("%v change is not valid for %v", change.Kind, s.Kind)
-		}
-
 		var compact bytes.Buffer
-		if err := json.Compact(&compact, change.Value); err != nil {
+		if err := json.Compact(&compact, change); err != nil {
 			return fmt.Errorf("invalid JSON: %w", err)
 		}
 		value := json.RawMessage(compact.Bytes())

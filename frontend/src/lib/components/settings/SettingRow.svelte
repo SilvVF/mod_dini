@@ -1,8 +1,8 @@
 <script lang="ts">
   import type {
     Setting,
-    SettingChange,
   } from "#lib/bindings/changeme/models.ts";
+  import type { SettingChange } from "#lib/contexts/settings.svelte.ts";
   import { Button } from "../ui/button";
   import SettingControl from "./SettingControl.svelte";
   import { SettingsMeta } from "./SettingsMeta";
@@ -32,7 +32,7 @@
   <div class="min-w-0 flex-1">
     <label
       for="setting-{setting.key}"
-      class="block font-serif text-base leading-snug font-bold"
+      class="block  text-base leading-snug font-bold"
     >
       {setting.title}
     </label>

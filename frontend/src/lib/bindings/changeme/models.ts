@@ -47,6 +47,7 @@ export interface CharacterFolder {
 
 export interface DataProgress {
     "id": string;
+    "packageId": string;
     "state": number;
     "total": number;
     "progress": number;
@@ -58,6 +59,23 @@ export interface FolderConfig {
     "collapsed": boolean;
     "sort": SortConfig;
 }
+
+export enum InstallState {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = 0,
+
+    InstallErr = -1,
+    InstallQueued = 0,
+    InstallDownloading = 1,
+    InstallExtracting = 2,
+
+    /**
+     * downloaded + extracted; deployment is the Enabled flag
+     */
+    InstallReady = 3,
+};
 
 /**
  * Kind tells the UI which control to render, and fixes the JSON shape of the value.
@@ -112,46 +130,21 @@ export interface ListParams {
     "page": number;
 }
 
-export interface ModFile {
-    "name": string;
-    "path": string;
+export interface ManifestEntry {
+    /**
+     * path relative to game mod root, normalized (lowercase, forward slashes)
+     */
+    "relPath": string;
     "size": number;
-    "is_selected": boolean;
-    "archive_name": string;
-}
-
-export interface ModFileTree {
-    "files": ModFile[] | null;
-    "total_files": number;
-    "has_multiple_files": boolean;
-}
-
-export interface ModFolder {
-    "id": string;
-    "path": string;
+    "hash": string;
 }
 
 export interface ModSaved {
     "id": string;
-    "state": ModState;
     "submission": Submission;
-    "submission_files": SubmissionFile[] | null;
-    "tree": ModFileTree;
+    "submissionFiles": SubmissionFile[] | null;
+    "packages": Pack[] | null;
 }
-
-export enum ModState {
-    /**
-     * The Go zero value for the underlying type of the enum.
-     */
-    $zero = 0,
-
-    ModStateErr = -1,
-    ModStateQueued = 0,
-    ModStateDownloading = 1,
-    ModStateExtracting = 2,
-    ModStateArchived = 3,
-    ModStateActive = 4,
-};
 
 /**
  * Option is one choice of a dropdown, segmented control or multiselect.
@@ -161,6 +154,17 @@ export interface Option {
     "label": string;
     "description"?: string;
     "icon"?: string;
+}
+
+export interface Pack {
+    "id": string;
+    "modId": string;
+    "fileId": number;
+    "name": string;
+    "state": InstallState;
+    "enabled": boolean;
+    "priority": number;
+    "manifest": ManifestEntry;
 }
 
 export interface RootFolder {
@@ -232,11 +236,6 @@ export interface Setting {
      */
     "default": json$0.RawMessage;
     "value"?: json$0.RawMessage;
-}
-
-export interface SettingChange {
-    "kind": Kind;
-    "value": json$0.RawMessage;
 }
 
 export enum SortBy {

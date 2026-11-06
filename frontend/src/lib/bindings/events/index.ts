@@ -9,11 +9,6 @@ import type {} from "../github.com/wailsapp/wails/v3/internal/eventdata.js";
 import "../github.com/wailsapp/wails/v3/internal/eventcreate.js";
 
 /**
- * Name of the custom event "folder-updated".
- */
-export const FolderUpdated = "folder-updated";
-
-/**
  * Name of the custom event "mod-download-progress".
  */
 export const ModDownloadProgress = "mod-download-progress";

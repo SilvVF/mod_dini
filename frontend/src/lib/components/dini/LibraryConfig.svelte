@@ -7,14 +7,12 @@
   let {
     config,
     selectedMod = null,
-    folders = [],
     onselectmod,
     onclosemod,
-    onunloadmod,
-    onmodchange,
     onopenfolder,
     onopenlink,
     onvanillachange,
+    onTogglePack,
     onstart,
   }: SidebarProps = $props();
 
@@ -27,16 +25,8 @@
   <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
     <!-- Game config is always rendered -->
     <div class="flex min-h-0 flex-1 flex-col" inert={!!selectedMod}>
-      <GameConfigView {config} {onselectmod} {onunloadmod} />
+      <GameConfigView {config} {onselectmod} />
     </div>
-
-    <!--
-			Mod config panel: always mounted, parked off-screen to the right.
-			The transition class only exists while a mod is selected, so:
-			  game -> mod : translate-x-full -> translate-x-0 animates (transition appears with the change)
-			  mod  -> mod : transform doesn't change, content just swaps, no animation
-			  mod  -> game: transition class is removed in the same change, so it snaps closed
-		-->
     <div
       inert={!selectedMod}
       aria-hidden={!selectedMod}
@@ -47,24 +37,9 @@
       {#if selectedMod}
         {#key selectedMod.id}
           <ModConfigView
-            mod={{
-              id: selectedMod.id,
-              category: selectedMod.submission.category,
-              author: selectedMod.submission.author,
-              name: selectedMod.submission.name,
-              link: selectedMod.submission.profileUrl,
-              note: selectedMod.submission.description,
-              thumbnail: selectedMod.submission.thumbnailUrl ?? "",
-              previews: selectedMod.submission.images.split(","),
-              has3D: false,
-              enabled: false,
-              favorite: false,
-              folder: selectedMod.tree.files?.join() ?? "",
-            }}
-            {folders}
+            mod={selectedMod}
+            onTogglePack={(pack) => onTogglePack(selectedMod, pack)}
             onclose={onclosemod}
-            onunload={() => onunloadmod?.(selectedMod.id)}
-            onchange={(patch) => onmodchange?.(selectedMod.id, patch)}
             onopenfolder={() => onopenfolder?.(selectedMod.id)}
             onopenlink={() => onopenlink?.(selectedMod.id)}
           />

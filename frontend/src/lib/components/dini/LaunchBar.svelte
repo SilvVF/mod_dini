@@ -26,7 +26,7 @@
     style="clip-path: polygon(5% 0, 100% 0, 95% 100%, 0 100%);"
   >
     <span class="flex flex-1 flex-col items-center">
-      <span class="font-serif text-2xl leading-none font-bold tracking-[0.2em]"
+      <span class=" text-2xl leading-none font-bold tracking-[0.2em]"
         >START</span
       >
       <span class="mt-1 text-xs opacity-80">

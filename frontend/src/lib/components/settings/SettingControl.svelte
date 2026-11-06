@@ -5,7 +5,6 @@
   import {
     Kind,
     type Setting,
-    type SettingChange,
   } from "../../bindings/changeme";
   import {
     Select,
@@ -20,6 +19,7 @@
   import { Checkbox } from "../ui/checkbox";
   import { Label } from "../ui/label";
   import { SettingsMeta } from "./SettingsMeta";
+  import type { SettingChange } from "#lib/contexts/settings.svelte.ts";
 
   let {
     setting,

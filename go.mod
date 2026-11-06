@@ -6,6 +6,7 @@ require (
 	github.com/mholt/archives v0.1.5
 	github.com/wailsapp/wails/v3 v3.0.0
 	go.etcd.io/bbolt v1.5.0
+	gopkg.in/ini.v1 v1.67.3
 )
 
 require (

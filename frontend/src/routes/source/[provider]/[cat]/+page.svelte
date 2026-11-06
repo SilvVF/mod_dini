@@ -7,7 +7,7 @@
     infiniteQueryOptions,
   } from "@tanstack/svelte-query";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
-  import { onMount, untrack } from "svelte";
+  import { untrack } from "svelte";
 
   let search = $state("");
   let container = $state<HTMLDivElement>();

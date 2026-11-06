@@ -19,21 +19,17 @@
 
   interface Props {
     item: GroupedCharacter;
-    enabled?: boolean;
     onClick: () => void;
     onSettings?: (item: GroupedCharacter) => void;
     onDelete?: (item: GroupedCharacter) => void;
     onToggle?: (item: GroupedCharacter, enabled: boolean) => void;
   }
 
-  let {
-    item,
-    enabled = $bindable(false),
-    onClick,
-    onSettings,
-    onDelete,
-    onToggle,
-  }: Props = $props();
+  let { item, onClick, onSettings, onDelete, onToggle }: Props = $props();
+
+  const enabled = $derived(
+    item.local.packages?.some((p) => p.enabled) ?? false,
+  );
 
   const submission = $derived(item.local.submission);
 </script>
@@ -80,7 +76,7 @@
           <Settings class="size-4" />
         </Button>
 
-        <span class="text-sm font-medium">{item.local.tree.total_files}</span>
+        <span class="text-sm font-medium">{item.local.packages?.length}</span>
 
         <Button
           variant="ghost"
@@ -94,7 +90,7 @@
       </div>
 
       <Switch
-        bind:checked={enabled}
+        checked={enabled}
         onCheckedChange={(checked) => onToggle?.(item, checked)}
         aria-label="Enable mod"
       />

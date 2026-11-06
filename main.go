@@ -30,7 +30,6 @@ func init() {
 	application.RegisterEvent[ModSaved]("mod-update")
 	application.RegisterEvent[map[int]ModSaved]("mods-loaded")
 	application.RegisterEvent[DataProgress]("mod-download-progress")
-	application.RegisterEvent[ModFolder]("folder-updated")
 	application.RegisterEvent[Setting]("setting-updated")
 }
 

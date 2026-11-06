@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log"
+	"os"
+	"path/filepath"
+	"slices"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	bolt "go.etcd.io/bbolt"
@@ -18,18 +20,13 @@ type ModService struct {
 	settings *SettingsStore
 }
 
-var (
-	DL_BUCKET                   = []byte("Downlods")
-	ErrDownloadBucketNotCreated = errors.New("download bucket has not been created yet")
-)
-
-func (m *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
-	err := m.settings.Sync(m.DefaultSettings())
+func (ms *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	err := ms.settings.Sync(ms.DefaultSettings())
 	if err != nil {
 		panic(err)
 	}
 
-	err = m.db.Update(func(tx *bolt.Tx) error {
+	err = ms.db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(DL_BUCKET)
 		return err
 	})
@@ -37,12 +34,12 @@ func (m *ModService) ServiceStartup(ctx context.Context, options application.Ser
 		panic(err)
 	}
 
-	m.fs.CreateIfNotExists(
+	ms.fs.CreateIfNotExists(
 		"zzz",
 		"Zenless Zone Zero",
 	)
 
-	_, err = m.fs.Update("zzz", func(folder *RootFolder) error {
+	_, err = ms.fs.Update("zzz", func(folder *RootFolder) error {
 		folder.Characters = ZenlessCharacters
 		return nil
 	})
@@ -51,19 +48,19 @@ func (m *ModService) ServiceStartup(ctx context.Context, options application.Ser
 		panic(err)
 	}
 
-	changes := m.settings.Changes()
+	changes := ms.settings.Changes()
 	go func() {
 		for c := range changes {
 			log.Printf("changed setting: %v", c)
-			m.app.Event.Emit("setting-updated", c)
+			ms.app.Event.Emit("setting-updated", c)
 		}
 	}()
 
 	return nil
 }
 
-func (m *ModService) FolderConfig() (RootFolder, error) {
-	f, err := m.fs.Get("zzz")
+func (ms *ModService) FolderConfig() (RootFolder, error) {
+	f, err := ms.fs.Get("zzz")
 
 	if err != nil {
 		log.Println("folder get ", err)
@@ -71,24 +68,24 @@ func (m *ModService) FolderConfig() (RootFolder, error) {
 	return f, err
 }
 
-func (m *ModService) Settings() ([]Setting, error) {
-	return m.settings.All()
+func (ms *ModService) Settings() ([]Setting, error) {
+	return ms.settings.All()
 }
 
-func (m *ModService) OnSettingAction(key string, action string) error {
-	return m.settings.DoAction(key, action)
+func (ms *ModService) OnSettingAction(key string, action string) error {
+	return ms.settings.DoAction(key, action)
 }
 
-func (m *ModService) UpdateSetting(key string, change SettingChange) error {
-	_, err := m.settings.SetValue(key, change)
+func (ms *ModService) UpdateSetting(key string, value json.RawMessage) error {
+	_, err := ms.settings.SetValue(key, value)
 	return err
 }
 
-func (m *ModService) Initial() (map[string]ModSaved, error) {
+func (ms *ModService) Initial() (map[string]ModSaved, error) {
 
 	res := map[string]ModSaved{}
 
-	err := m.db.View(func(tx *bolt.Tx) error {
+	err := ms.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(DL_BUCKET)
 		if b == nil {
 			return ErrDownloadBucketNotCreated
@@ -109,62 +106,96 @@ func (m *ModService) Initial() (map[string]ModSaved, error) {
 	return res, err
 }
 
-func (m *ModService) SetModFolder(key string) error {
+func (ms *ModService) SetModFolder(key string, reset bool) error {
+	if reset {
+		path, err := GetSetting[string](ms.settings, "xxmi.folder")
+		if err != nil || path == "" {
+			return err
+		}
+		_, err = SetValueOf(ms.settings, key, filepath.Join(path, "WWMI/mods"))
+		return err
+	} else {
+		path, err := ms.app.Dialog.
+			OpenFile().
+			SetTitle("Select Folder").
+			CanChooseFiles(false).
+			CanChooseDirectories(true).
+			PromptForSingleSelection()
 
-	path, err := m.app.Dialog.
-		OpenFile().
-		SetTitle("Select Folder").
-		CanChooseFiles(false).
-		CanChooseDirectories(true).
-		PromptForSingleSelection()
+		if err != nil || path == "" {
+			return err
+		}
 
-	if err != nil || path == "" {
+		_, err = SetValueOf(ms.settings, key, path)
 		return err
 	}
+}
 
-	_, err = SetValueOf(m.settings, key, KindText, path)
+func (ms *ModService) EnablePacks(modId string, ids []string) error {
+	log.Println("settings ", modId, " packs: ", ids)
+	_, err := ms.updateMod(modId, func(mod *ModSaved) error {
+		for i, p := range mod.Packs {
+			mod.Packs[i].Enabled = slices.Contains(ids, p.ID)
+		}
+		return nil
+	})
+
 	return err
 }
 
-func (m *ModService) Save(sub Submission, files []SubmissionFile, tree ModFileTree) error {
+func (ms *ModService) Save(sub Submission, files []SubmissionFile, selected []Pack) error {
+	log.Println("saving ModSaved", selected)
 
-	mod := ModSaved{
-		Submission: sub,
-		Files:      files,
-		Tree:       tree,
+	modID := sub.Provider + ":" + sub.Slug
+	outputDir, err := GetSetting[string](ms.settings, "zzmi.folder")
+
+	if err != nil || outputDir == "" {
+		log.Println("output dir not canceling save ", modID)
+		return err
 	}
 
-	err := m.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(DL_BUCKET)
+	modDir := filepath.Join(outputDir, sub.Provider, sub.Slug)
+	if err := os.RemoveAll(modDir); err != nil {
+		return err
+	}
 
-		mod.ID = sub.Provider + ":" + sub.Slug
-		data, err := json.Marshal(mod)
+	mod := ModSaved{
+		ID:              modID,
+		Submission:      sub,
+		SubmissionFiles: files,
+		Packs:           []Pack{},
+	}
 
-		if err != nil {
-			return err
-		}
+	for i, s := range selected {
+		mod.Packs = append(mod.Packs, Pack{
+			ID:       s.ID,
+			ModID:    modID,
+			FileID:   s.FileID,
+			Name:     s.Name,
+			State:    InstallQueued,
+			Priority: i,
+		})
+	}
 
-		err = b.Put([]byte(mod.ID), data)
-		if err != nil {
-			return err
-		}
+	data, err := json.Marshal(mod)
+	if err != nil {
+		return err
+	}
 
-		m.app.Event.Emit("mod-update", mod)
-
-		return nil
+	err = ms.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(DL_BUCKET).Put([]byte(modID), data)
 	})
 	if err != nil {
 		return err
 	}
 
-	err = m.DownloadMod(mod, "zzmi")
-	log.Println(err)
+	ms.app.Event.Emit("mod-update", mod)
 
-	return err
+	return ms.DownloadMod(mod)
 }
 
-func (m *ModService) Page(id int) (Submission, []SubmissionFile, error) {
-	res, err := m.gbApi.ModPage(id)
+func (ms *ModService) Page(id int) (Submission, []SubmissionFile, error) {
+	res, err := ms.gbApi.ModPage(id)
 	if err != nil {
 		return Submission{}, nil, err
 	}
@@ -187,7 +218,7 @@ type ListPage struct {
 	Prev        int          `json:"prev"`
 }
 
-func (m *ModService) List(p ListParams) (ListPage, error) {
+func (ms *ModService) List(p ListParams) (ListPage, error) {
 	q := NewCategoryQuery()
 	q.Page = max(p.Page, 1)
 	q.ID = p.Cat
@@ -198,7 +229,7 @@ func (m *ModService) List(p ListParams) (ListPage, error) {
 	lp := ListPage{}
 
 	if p.Provider == "gamebanana" {
-		res, err := m.gbApi.CategoryContent(q)
+		res, err := ms.gbApi.CategoryContent(q)
 		if err != nil {
 			return ListPage{}, err
 		}
@@ -219,12 +250,21 @@ func (m *ModService) List(p ListParams) (ListPage, error) {
 	}
 }
 
-func (m *ModService) DefaultSettings() []Setting {
+func (ms *ModService) DefaultSettings() []Setting {
 	return []Setting{
 		NewText("zzmi.folder", CategoryFolders, "ZenlessZoneZero Mods Folder", "", "").
 			WithIcon("folder").
-			WithActionHandler(m.settings, "change.zzmi", "Change", func() error {
-				return m.SetModFolder("zzmi.folder")
+			WithActionHandler(ms.settings, "change.zzmi", "Change", func() error {
+				return ms.SetModFolder("zzmi.folder", false)
+			}).
+			WithActionHandler(ms.settings, "zzmi.xxmi", "Use XXMI's", func() error {
+				return ms.SetModFolder("zzmi.folder", true)
+			}).
+			MakeUneditable(),
+		NewText("xxmi.folder", CategoryFolders, "XXMI Launcher", "", "").
+			WithIcon("folder").
+			WithActionHandler(ms.settings, "change.xxmi", "Change", func() error {
+				return ms.SetModFolder("xxmi.folder", false)
 			}).
 			WithAction("zzmi.xxmi", "Use XXMI's").
 			MakeUneditable(),

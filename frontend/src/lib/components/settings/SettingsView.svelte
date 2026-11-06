@@ -58,7 +58,7 @@
 
 <div class={cn("flex size-full min-h-0 flex-col", className)} {...restProps}>
   <header class="flex shrink-0 items-center justify-between px-4 pt-4 pb-3">
-    <h1 class="font-serif text-xl font-bold">Settings</h1>
+    <h1 class=" text-xl font-bold">Settings</h1>
     {#if onclose}
       <Button
         variant="outline"
@@ -113,7 +113,7 @@
           <section aria-labelledby="section-{title}" class="shrink-0">
             <h2
               id="section-{title}"
-              class="text-muted-foreground mb-2 px-1 font-serif text-xs font-bold tracking-wider uppercase"
+              class="text-muted-foreground mb-2 px-1  text-xs font-bold tracking-wider uppercase"
             >
               {title}
             </h2>

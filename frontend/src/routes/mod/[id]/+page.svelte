@@ -1,26 +1,24 @@
 <script lang="ts">
-  import {
-    ModService,
-    type ModFileTree,
-    type Submission,
-    type SubmissionFile,
-  } from "#lib/bindings/changeme/index.ts";
+  import { InstallState } from "#lib/bindings/changeme/index.ts";
   import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
   import SubmissionFilePreview from "#lib/components/dini/SubmissionFilePreview.svelte";
   import SubmissionPreview from "#lib/components/dini/SubmissionPreview.svelte";
   import Progress from "#lib/components/ui/progress/progress.svelte";
+  import { statusOf, type PackageView } from "#lib/contexts/group-mods.ts";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
-  import { page } from "$app/state";
+  import type { PageProps } from "./$types";
 
-  let submission = $state<Submission>();
-  let files = $state<SubmissionFile[]>([]);
+  let { data }: PageProps = $props();
 
-  const id = $derived(page.params.id);
+  const submission = $derived(data.submission);
+  const files = $derived(data.files);
 
   const saved = getSavedModsContext();
   const localMod = $derived(
     Object.values(saved.mods).find(
-      (v) => v.submission.slug === submission?.slug,
+      (v) =>
+        v.submission.provider === submission?.provider &&
+        v.submission.slug === submission?.slug,
     ),
   );
 
@@ -28,33 +26,41 @@
     localMod ? saved.dlProgress[localMod.id] : undefined,
   );
 
-  $effect(() => {
-    ModService.Page(Number(id)).then(([data, sfiles]) => {
-      submission = data;
-      files = sfiles ?? [];
+  const packages = $derived.by<PackageView[]>(() => {
+    const localPacks = localMod?.packages ?? [];
+    return files.map((file) => {
+      const installed = localPacks.find((pack) => {
+        pack.fileId === file.fileId;
+      });
+
+      return {
+        file: file,
+        pack: installed ?? {
+          id: file.fileId.toString(),
+          modId: `${submission.provider}:${submission.slug}`,
+          fileId: file.fileId,
+          name: file.fileName,
+          state: InstallState.$zero,
+          enabled: false,
+          priority: 0,
+          manifest: {
+            relPath: file.fileName,
+            size: file.size,
+            hash: file.md5Checksum,
+          },
+        },
+        status: statusOf(file, installed),
+        enabled: installed !== undefined,
+      };
     });
   });
 
-  const tree = $derived.by<ModFileTree>(() => {
-    const f =
-      files.map((f) => ({
-        name: f.fileName,
-        path: "",
-        size: f.size,
-        is_selected: false,
-        archive_name: f.fileName,
-      })) ?? [];
-
-    return {
-      files: localMod?.tree?.files ?? f,
-      total_files: files.length,
-      has_multiple_files: files.length > 1,
-    };
-  });
-
-  function handleConfirmDownload(selectedFileTree: ModFileTree) {
-    if (!submission) return;
-    saved.add(submission, files, selectedFileTree);
+  function handleConfirmDownload(selected: PackageView[]) {
+    saved.add(
+      submission,
+      files,
+      selected.map((s) => s.pack),
+    );
   }
 </script>
 
@@ -72,7 +78,8 @@
     <SubmissionFilePreview {files} isDownloadable={true} />
 
     <FileSelectDialog
-      fileTree={tree}
+      packageView={packages}
+      modName={submission?.name}
       onConfirm={handleConfirmDownload}
       onCancel={() => {}}
     />

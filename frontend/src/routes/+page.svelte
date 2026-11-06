@@ -7,11 +7,11 @@
   import type {
     CharacterFolder,
     ModSaved,
+    Pack,
     Subfolder,
   } from "#lib/bindings/changeme/models.ts";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import ModCard from "#lib/components/dini/ModCard.svelte";
-  import { testModRecord } from "#lib/test/mod-card-test-data.ts";
   import ModLibraryHeader from "#lib/components/dini/ModLibraryHeader.svelte";
   import { sumBy } from "#lib/ts-ext.ts";
   import {
@@ -23,39 +23,62 @@
 
   let { data }: PageProps = $props();
 
-  const test = true;
   const saved = getSavedModsContext();
 
-  let selected = $state<SelectedItem>({ type: "nothing", value: null });
-  let selectedMod = $state<ModSaved | undefined>(undefined);
+  let selectedItemId = $state<string | undefined>(undefined);
+  const selected = $derived.by<SelectedItem>(() => {
+    if (!selectedItemId) return { type: "nothing", value: null };
+    const subfolder = {
+      type: "character",
+      value: data.subfolders[selectedItemId],
+    };
+    const character = {
+      type: "subfolder",
+      value: data.characters[selectedItemId],
+    };
+
+    return (
+      subfolder.value
+        ? subfolder
+        : character.value
+          ? character
+          : { type: "nothing", value: null }
+    ) as SelectedItem;
+  });
+
+  let selectedModId = $state<string | undefined>(undefined);
 
   $effect(() => {
-    selected;
-    selectedMod = undefined;
+    selectedItemId;
+    selectedModId = undefined;
   });
 
   const characters = $derived(Object.entries(data.characters));
   const subfolders = $derived(Object.entries(data.subfolders));
 
   const groupedMods = $derived(
-    groupModsByFolders(
-      test ? testModRecord() : saved.mods,
-      data.characters,
-      data.subfolders,
-    ),
+    groupModsByFolders(saved.mods, data.characters, data.subfolders),
   );
 
   const selectedGroups = $derived(
-    groupedMods.filter((m) => (!selected ? true : m.folder === selected.value)),
+    groupedMods.filter((m) => {
+      return selected.type === "nothing"
+        ? true
+        : m.folder.name === selected.value.name;
+    }),
   );
 
   const selectedCount = $derived(
     sumBy(selectedGroups, (group) => group.items.length),
   );
 
+  const selectedMod = $derived(
+    selectedModId ? saved.mods[selectedModId] : undefined,
+  );
+
   let config = $derived<GameConfig>({
     game: {
-      id: "zzz",
+      id: "zzmi",
       name: "Zenless Zone Zero",
       image:
         "https://images.gamebanana.com/img/Webpage/Game/Profile/Background/66868c3874664.jpg",
@@ -63,11 +86,9 @@
     preset: {
       id: "p1",
       name: "Preset 1",
-      modIds: selectedGroups.flatMap((group) =>
-        group.items.map((item) => item.id),
-      ),
+      modIds: [],
     },
-    mods: selectedGroups.flatMap((group) => group.items),
+    mods: groupedMods.flatMap((group) => group.items),
     stats: {
       loaded: 4,
       total: 6,
@@ -78,30 +99,35 @@
     launchVanilla: false,
   });
 
+  function handleSubfolderSelected(folder: Subfolder) {
+    selectedItemId = folder.id;
+  }
+
   function handleCharacterSelected(folder: CharacterFolder) {
-    if (selected.value?.name === folder.name) {
-      selected = { type: "nothing", value: null };
-    } else {
-      selected = { type: "character", value: folder };
-    }
+    selectedItemId = folder.name;
   }
 
   function handleCloseMod() {
-    selectedMod = undefined;
+    selectedModId = undefined;
   }
 
   function handleSelectMod(id: string) {
-    const mods = groupedMods.flatMap((group) => group.items);
-    selectedMod = mods.find((mod) => mod.id === id);
+    selectedModId = id;
   }
 
   function hanldeModCardClick(mod: ModSaved) {
-    selectedMod = mod;
+    selectedModId = mod.id;
+  }
+
+  function handlePkgSelected(mod: ModSaved, pkg: Pack) {
+    saved.enablePkg(mod.id, pkg.id);
+  }
+
+  function handleModToggle(mod: ModSaved) {
+    saved.toggleAllPkgs(mod.id);
   }
 
   function handleVanillaChange(v: boolean) {}
-
-  function hanldeUnloadMod() {}
 </script>
 
 <div class="overflow-clip">
@@ -124,7 +150,18 @@
               {/snippet}
             </Sidebar.GroupLabel>
             <Collapsible.Content>
-              <Sidebar.GroupContent />
+              <Sidebar.GroupContent>
+                {#each subfolders as [name, folder] (name)}
+                  <Sidebar.MenuItem>
+                    <Sidebar.MenuButton
+                      isActive={folder.name === selected.value?.name}
+                      onclick={() => handleSubfolderSelected(folder)}
+                    >
+                      <span>{name}</span>
+                    </Sidebar.MenuButton>
+                  </Sidebar.MenuItem>
+                {/each}
+              </Sidebar.GroupContent>
             </Collapsible.Content>
           </Sidebar.Group>
         </Collapsible.Root>
@@ -190,7 +227,7 @@
     xl:grid-cols-4
     2xl:grid-cols-5"
         >
-          {#each groupedMods as group}
+          {#each selectedGroups as group}
             {#each group.items as mod (`${group.name}:${mod.id}`)}
               <ModCard
                 item={{
@@ -199,10 +236,9 @@
                   local: mod,
                 }}
                 onClick={() => hanldeModCardClick(mod)}
-                enabled={false}
                 onSettings={() => {}}
                 onDelete={() => {}}
-                onToggle={() => {}}
+                onToggle={() => handleModToggle(mod)}
               />
             {/each}
           {/each}
@@ -214,11 +250,10 @@
       <LibraryConfig
         {config}
         {selectedMod}
-        enabled={false}
         folders={["Character", "Others"]}
+        onTogglePack={handlePkgSelected}
         onselectmod={handleSelectMod}
         onclosemod={handleCloseMod}
-        onunloadmod={hanldeUnloadMod}
         onvanillachange={handleVanillaChange}
       />
     </Resizable.Pane>

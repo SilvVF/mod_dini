@@ -27,7 +27,7 @@
 <div class="flex min-h-0 flex-1 flex-col">
   <header class="flex items-center gap-2 px-5 pt-5 pb-3">
     <Diamond class="text-primary size-4 fill-current" />
-    <h2 class="font-serif text-xl font-bold">{config.preset.name}</h2>
+    <h2 class=" text-xl font-bold">{config.preset.name}</h2>
     <ChevronRight class="text-muted-foreground size-3" />
   </header>
 
@@ -82,7 +82,7 @@
   <dl class="border-t px-5 py-4 grid grid-cols-2 gap-x-6 gap-y-4">
     {#each stats as s}
       <div>
-        <dd class="font-serif text-xl leading-none font-bold">
+        <dd class=" text-xl leading-none font-bold">
           {s.value}{#if s.suffix}<span
               class="text-muted-foreground text-sm font-normal">{s.suffix}</span
             >{/if}

@@ -1,48 +1,45 @@
 package main
 
-type ModFolder struct {
-	ID   string `json:"id"`
-	Path string `json:"path"`
+type InstallState int
+
+const (
+	InstallErr InstallState = iota - 1
+	InstallQueued
+	InstallDownloading
+	InstallExtracting
+	InstallReady // downloaded + extracted; deployment is the Enabled flag
+)
+
+type Pack struct {
+	ID       string        `json:"id"`
+	ModID    string        `json:"modId"`
+	FileID   int64         `json:"fileId"`
+	Name     string        `json:"name"`
+	State    InstallState  `json:"state"`
+	Enabled  bool          `json:"enabled"`
+	Priority int           `json:"priority"`
+	Manifest ManifestEntry `json:"manifest"`
+}
+
+type ModSaved struct {
+	ID              string           `json:"id"`
+	Submission      Submission       `json:"submission"`
+	SubmissionFiles []SubmissionFile `json:"submissionFiles"`
+	Packs           []Pack           `json:"packages"`
 }
 
 type DataProgress struct {
-	ID       string `json:"id"`
-	State    int    `json:"state"`
-	Total    int64  `json:"total"`
-	Progress int64  `json:"progress"`
+	ID        string `json:"id"`
+	PackageID string `json:"packageId"`
+	State     int    `json:"state"`
+	Total     int64  `json:"total"`
+	Progress  int64  `json:"progress"`
 }
 
-type ModFile struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Size        int64  `json:"size"`
-	IsSelected  bool   `json:"is_selected"`
-	ArchiveName string `json:"archive_name"`
-}
-
-type ModFileTree struct {
-	Files            []ModFile `json:"files"`
-	TotalFiles       int       `json:"total_files"`
-	HasMultipleFiles bool      `json:"has_multiple_files"`
-}
-
-const (
-	ModStateErr         ModState = -1
-	ModStateQueued      ModState = 0
-	ModStateDownloading ModState = 1
-	ModStateExtracting  ModState = 2
-	ModStateArchived    ModState = 3
-	ModStateActive      ModState = 4
-)
-
-type ModState int
-
-type ModSaved struct {
-	ID         string           `json:"id"`
-	State      ModState         `json:"state"`
-	Submission Submission       `json:"submission"`
-	Files      []SubmissionFile `json:"submission_files"`
-	Tree       ModFileTree      `json:"tree"`
+type ManifestEntry struct {
+	RelPath string `json:"relPath"` // path relative to game mod root, normalized (lowercase, forward slashes)
+	Size    int64  `json:"size"`
+	Hash    string `json:"hash"`
 }
 
 type Submission struct {

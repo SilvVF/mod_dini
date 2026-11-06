@@ -1,304 +1,196 @@
 <script lang="ts">
-  import { Badge } from "../ui/badge";
-  import { Checkbox } from "../ui/checkbox";
+  import { untrack } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import * as Dialog from "../ui/dialog";
-  import File from "@lucide/svelte/icons/file";
-  import Archive from "@lucide/svelte/icons/archive";
-  import FolderOpen from "@lucide/svelte/icons/folder-open";
-  import Download from "@lucide/svelte/icons/download";
-  import { formatSize } from "./utils";
   import { Button } from "../ui/button";
-  import DialogTrigger from "../ui/dialog/dialog-trigger.svelte";
-  import DialogClose from "../ui/dialog/dialog-close.svelte";
-  import type { ModFile, ModFileTree } from "#lib/bindings/changeme/models.ts";
+  import { Checkbox } from "../ui/checkbox";
+  import Download from "@lucide/svelte/icons/download";
+  import HardDrive from "@lucide/svelte/icons/hard-drive";
+  import { formatSize } from "./utils";
+  import type { PackageView } from "#lib/contexts/group-mods.ts";
 
   interface Props {
-    fileTree: ModFileTree | null;
-    onConfirm: (selectedFileTree: ModFileTree) => void;
+    packageView: PackageView[];
+    onConfirm: (packs: PackageView[]) => void;
     onCancel: () => void;
     modName?: string;
   }
 
-  let { fileTree, onConfirm, onCancel, modName = "Mod" }: Props = $props();
+  let { packageView, onConfirm, onCancel, modName = "Mod" }: Props = $props();
 
-  let localFileTree = $state<ModFileTree | null>(null);
+  let open = $state(false);
+  const selectedIds = new SvelteSet<string>();
 
+  // Rows mid-install can't be toggled
+  const isLocked = (p: PackageView) =>
+    p.status === "downloading" || p.status === "extracting";
+
+  // Reset the selection from the stored state each time the dialog opens
   $effect(() => {
-    if (fileTree) {
-      localFileTree = fileTree;
-    } else {
-      localFileTree = null;
-    }
+    if (!open) return;
+    untrack(() => {
+      selectedIds.clear();
+      for (const p of packageView) if (p.enabled) selectedIds.add(p.pack.id);
+    });
   });
 
-  const selectedFiles = $derived(
-    localFileTree?.files?.filter((file) => file.is_selected) ?? [],
+  const toggleable = $derived(packageView.filter((p) => !isLocked(p)));
+  const selected = $derived(
+    packageView.filter((p) => selectedIds.has(p.pack.id)),
   );
-
-  const selectedCount = $derived(selectedFiles.length);
-
-  const totalSelectedSize = $derived(
-    selectedFiles.reduce((acc, file) => acc + file.size, 0),
-  );
+  const totalSize = $derived(selected.reduce((sum, p) => sum + p.file.size, 0));
 
   const allSelected = $derived(
-    localFileTree !== null &&
-      localFileTree.files !== null &&
-      localFileTree.files.length > 0 &&
-      selectedCount === localFileTree.files.length,
+    toggleable.length > 0 &&
+      toggleable.every((p) => selectedIds.has(p.pack.id)),
   );
+  const someSelected = $derived(selected.length > 0 && !allSelected);
 
-  const someSelected = $derived(
-    localFileTree !== null &&
-      localFileTree.files !== null &&
-      selectedCount > 0 &&
-      selectedCount < localFileTree.files.length,
-  );
+  function toggle(id: string, checked: boolean) {
+    if (checked) selectedIds.add(id);
+    else selectedIds.delete(id);
+  }
 
-  const filesByArchive = $derived.by(() => {
-    const groups = new Map<string, ModFile[]>();
+  function toggleAll(checked: boolean) {
+    for (const p of toggleable) toggle(p.pack.id, checked);
+  }
 
-    for (const file of localFileTree?.files ?? []) {
-      const files = groups.get(file.archive_name) ?? [];
-      files.push(file);
-      groups.set(file.archive_name, files);
+  function confirm() {
+    onConfirm(selected);
+    open = false;
+  }
+
+  function cancel() {
+    onCancel();
+    open = false;
+  }
+
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["year", 31536000],
+    ["month", 2592000],
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
+  ];
+
+  // addedAt may be unix seconds or milliseconds
+  function timeAgo(ts: number) {
+    const ms = ts < 1e12 ? ts * 1000 : ts;
+    const diff = (ms - Date.now()) / 1000;
+    for (const [unit, secs] of units) {
+      if (Math.abs(diff) >= secs)
+        return rtf.format(Math.round(diff / secs), unit);
     }
-
-    return Array.from(groups.entries());
-  });
-
-  const hasMultipleArchives = $derived(filesByArchive.length > 1);
-
-  function handleFileToggle(fileIndex: number, checked: boolean) {
-    if (!localFileTree) return;
-
-    localFileTree = {
-      ...localFileTree,
-      files:
-        localFileTree?.files?.map((file, index) =>
-          index === fileIndex ? { ...file, is_selected: checked } : file,
-        ) ?? [],
-    };
-  }
-
-  function handleSelectAll(checked: boolean) {
-    if (!localFileTree) return;
-
-    localFileTree = {
-      ...localFileTree,
-      files:
-        localFileTree?.files?.map((file) => ({
-          ...file,
-          is_selected: checked,
-        })) ?? [],
-    };
-  }
-
-  function handleArchiveToggle(archiveName: string, checked: boolean) {
-    if (!localFileTree) return;
-
-    localFileTree = {
-      ...localFileTree,
-      files:
-        localFileTree?.files?.map((file) =>
-          file.archive_name === archiveName
-            ? { ...file, is_selected: checked }
-            : file,
-        ) ?? [],
-    };
-  }
-
-  function getArchiveSelectedCount(files: ModFile[]): number {
-    return files.filter((file) => file.is_selected).length;
-  }
-
-  function isArchiveFullySelected(files: ModFile[]): boolean {
-    return files.length > 0 && files.every((file) => file.is_selected);
-  }
-
-  function isArchivePartiallySelected(files: ModFile[]): boolean {
-    const selected = getArchiveSelectedCount(files);
-    return selected > 0 && selected < files.length;
-  }
-
-  function confirmSelection() {
-    if (!localFileTree || selectedCount === 0) return;
-    onConfirm(localFileTree);
+    return "just now";
   }
 </script>
 
-<Dialog.Root>
-  <DialogTrigger>
-    <Button>DL</Button>
-  </DialogTrigger>
-  {#if localFileTree}
-    <Dialog.Content
-      class="flex h-[80vh]max-h-[80vh] max-w-3xl flex-col gap-0 overflow-hidden bg-background p-0"
-      onclick={(event) => event.stopPropagation()}
-    >
-      <Dialog.Header class="shrink-0 border-b px-6 py-4">
-        <Dialog.Title class="flex items-center gap-2">
-          <FolderOpen class="h-5 w-5" />
-          Select files to install {modName}
+<Dialog.Root bind:open>
+  <Dialog.Trigger>
+    {#snippet child({ props })}
+      <Button {...props}>DL</Button>
+    {/snippet}
+  </Dialog.Trigger>
+
+  <Dialog.Content class="max-w-xl gap-6 p-8">
+    {#if packageView.length > 0}
+      <Dialog.Header class="gap-0 text-left">
+        <div
+          class="mb-6 flex size-12 items-center justify-center rounded-full bg-muted"
+        >
+          <Download class="size-5" />
+        </div>
+
+        <Dialog.Title class="text-xl font-semibold">
+          Select Files to Download
         </Dialog.Title>
 
-        <Dialog.Description>
-          Choose the files you want to install.
-          {selectedCount} of {localFileTree.total_files} selected
-          {#if selectedCount > 0}
-            ({formatSize(totalSelectedSize)})
-          {/if}
+        <Dialog.Description class="mt-1">
+          {modName} contains {packageView.length}
+          {packageView.length === 1 ? "file" : "files"}. Select which ones to
+          install.
         </Dialog.Description>
       </Dialog.Header>
 
-      <div
-        class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 py-4 no-scrollbar"
-      >
-        <div class="flex shrink-0 items-center gap-2 border-b pb-2">
+      <div class="overflow-hidden rounded-lg border bg-muted/30">
+        <label
+          class="flex cursor-pointer items-center gap-3 border-b bg-muted/40 px-4 py-3"
+        >
           <Checkbox
             checked={allSelected}
-            class={someSelected ? "data-[state=checked]:bg-yellow-500" : ""}
-            onCheckedChange={(checked) => handleSelectAll(checked === true)}
+            indeterminate={someSelected}
+            disabled={toggleable.length === 0}
+            onCheckedChange={(checked) => toggleAll(checked === true)}
           />
-
-          <span class="text-sm font-medium">
-            Select all ({localFileTree.total_files})
+          <span
+            class="flex-1 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Select all
           </span>
-        </div>
+          <span class="text-xs font-medium text-muted-foreground">
+            {selected.length}/{packageView.length}
+          </span>
+        </label>
 
-        <div class="min-h-0 flex-1 overflow-y-auto pr-2">
-          <div class="space-y-4">
-            {#if hasMultipleArchives}
-              {#each filesByArchive as [archiveName, files] (archiveName)}
-                <div class="space-y-2">
-                  <div class="flex items-center gap-2 border-b pb-2">
-                    <Checkbox
-                      checked={isArchiveFullySelected(files)}
-                      class={isArchivePartiallySelected(files)
-                        ? "data-[state=checked]:bg-yellow-500"
-                        : ""}
-                      onCheckedChange={(checked) =>
-                        handleArchiveToggle(archiveName, checked === true)}
-                    />
+        <div class="max-h-80 divide-y overflow-y-auto">
+          {#each packageView as p (p.pack.id)}
+            {@const locked = isLocked(p)}
+            {@const checked = selectedIds.has(p.pack.id)}
+            <label
+              class="flex items-start gap-3 px-4 py-3 transition-colors {checked
+                ? 'bg-muted/60'
+                : 'hover:bg-muted/30'} {locked
+                ? 'cursor-not-allowed opacity-60'
+                : 'cursor-pointer'}"
+            >
+              <Checkbox
+                class="mt-1"
+                {checked}
+                disabled={locked}
+                onCheckedChange={(c) => toggle(p.pack.id, c === true)}
+              />
 
-                    <Archive class="h-4 w-4 text-muted-foreground" />
+              <div class="min-w-0 flex-1 space-y-0.5">
+                <div class="break-all font-semibold">{p.file.fileName}</div>
 
-                    <span class="text-sm font-medium">
-                      {archiveName}
-                    </span>
-
-                    <Badge variant="outline" class="text-xs">
-                      {getArchiveSelectedCount(files)}/{files.length}
-                    </Badge>
+                {#if p.file.description}
+                  <div class="text-sm text-muted-foreground">
+                    {p.file.description}
                   </div>
+                {/if}
 
-                  <div class="ml-6 space-y-1">
-                    {#each files as file}
-                      <div
-                        class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left hover:bg-muted/50"
-                        data-install-file={JSON.stringify([
-                          file.archive_name,
-                          file.path,
-                        ])}
-                      >
-                        <div class="flex min-w-0 items-center gap-3">
-                          <File
-                            class="h-4 w-4 shrink-0 text-muted-foreground"
-                          />
-
-                          <div class="min-w-0 space-y-1">
-                            <div class="break-all font-mono text-sm">
-                              {file.name}
-                            </div>
-
-                            {#if file.path !== file.name}
-                              <div
-                                class="break-all text-xs text-muted-foreground"
-                              >
-                                {file.path}
-                              </div>
-                            {/if}
-                          </div>
-                        </div>
-
-                        <span
-                          class="ml-3 shrink-0 text-xs text-muted-foreground"
-                        >
-                          {formatSize(file.size)}
-                        </span>
-                      </div>
-                    {/each}
-                  </div>
+                <div class="flex gap-3 text-sm text-muted-foreground">
+                  <span class="font-medium">{formatSize(p.file.size)}</span>
+                  <span>Updated {timeAgo(p.file.addedAt)}</span>
                 </div>
-              {/each}
-            {:else}
-              <div class="space-y-2">
-                {#each localFileTree.files as file, index (file.path)}
-                  <div
-                    class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left hover:bg-muted/50"
-                    data-install-file={JSON.stringify([
-                      file.archive_name,
-                      file.path,
-                    ])}
-                  >
-                    <div class="flex min-w-0 items-center gap-3">
-                      <File class="h-4 w-4 shrink-0 text-muted-foreground" />
-
-                      <div class="min-w-0 space-y-1">
-                        <div class="break-all font-mono text-sm">
-                          {file.name}
-                        </div>
-
-                        {#if file.path !== file.name}
-                          <div class="break-all text-xs text-muted-foreground">
-                            {file.path}
-                          </div>
-                        {/if}
-                      </div>
-                    </div>
-
-                    <span class="ml-3 shrink-0 text-xs text-muted-foreground">
-                      {formatSize(file.size)}
-                    </span>
-                  </div>
-                {/each}
               </div>
-            {/if}
-          </div>
+            </label>
+          {/each}
         </div>
       </div>
 
       <Dialog.Footer
-        class="mt-auto flex shrink-0 flex-col gap-3 border-t bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between"
+        class="flex-row items-center justify-between sm:justify-between"
       >
-        <div class="text-sm text-muted-foreground">
-          {#if selectedCount === 0}
-            No files selected
-          {:else}
-            {selectedCount} files selected ({formatSize(totalSelectedSize)})
-          {/if}
+        <div class="flex items-center gap-2 text-sm text-muted-foreground">
+          <HardDrive class="size-4" />
+          Total: {formatSize(totalSize)}
         </div>
 
-        <div class="flex items-center justify-end gap-2">
-          <DialogClose>
-            <Button variant="outline" onclick={onCancel}>Cancel</Button>
-          </DialogClose>
-
-          <DialogClose>
-            <Button disabled={selectedCount === 0} onclick={confirmSelection}>
-              <Download class="mr-2 h-4 w-4" />
-              Install selected
-            </Button>
-          </DialogClose>
+        <div class="flex items-center gap-2">
+          <Button variant="outline" onclick={cancel}>Cancel</Button>
+          <Button onclick={confirm}>
+            <Download class="size-4" />
+            Download Selected
+          </Button>
         </div>
       </Dialog.Footer>
-    </Dialog.Content>
-  {:else}
-    <Dialog.Content class="max-h-[80vh] max-w-md">
+    {:else}
       <Dialog.Header>
         <Dialog.Title>Loading</Dialog.Title>
         <Dialog.Description>Analyzing mod files...</Dialog.Description>
       </Dialog.Header>
-    </Dialog.Content>
-  {/if}
+    {/if}
+  </Dialog.Content>
 </Dialog.Root>
