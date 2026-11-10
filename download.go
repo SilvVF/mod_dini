@@ -182,6 +182,8 @@ func (ms *ModService) downloadPackage(
 
 	pkg, err = ms.updatePack(mod.ID, pkg.ID, func(p *Pack) error {
 		p.State = InstallReady
+		p.Storage = StorageActive
+		p.Enabled = true
 		p.Manifest = ManifestEntry{
 			RelPath: relPath,
 			Size:    size,
@@ -278,23 +280,4 @@ func (cw *countingWriter) Write(p []byte) (int, error) {
 	cw.count += int64(n)
 	cw.onProgress(cw.count)
 	return n, nil
-}
-
-var unarrExtensions = map[string]struct{}{
-	".zip":     {},
-	".rar":     {},
-	".7z":      {},
-	".tar":     {},
-	".gz":      {},
-	".bz2":     {},
-	".xz":      {},
-	".tar.gz":  {},
-	".tar.bz2": {},
-	".tar.xz":  {},
-	".iso":     {},
-	".cab":     {},
-	".lzma":    {},
-	".cpio":    {},
-	".z":       {},
-	".lz":      {},
 }

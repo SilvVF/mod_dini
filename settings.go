@@ -350,7 +350,7 @@ func (s Setting) hasOption(v string) bool {
 	return slices.ContainsFunc(s.Options, func(o Option) bool { return o.Value == v })
 }
 
-func SetValueOf[T any](st *SettingsStore, key string, v T) (Setting, error) {
+func SetSettingValue[T any](st *SettingsStore, key string, v T) (Setting, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return Setting{}, err

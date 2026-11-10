@@ -12,7 +12,8 @@ export {
     Category,
     InstallState,
     Kind,
-    SortBy
+    SortBy,
+    StorageState
 } from "./models.js";
 
 export type {

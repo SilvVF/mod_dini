@@ -10,19 +10,37 @@ const (
 	InstallReady // downloaded + extracted; deployment is the Enabled flag
 )
 
+type StorageState int
+
+const (
+	StorageNone        StorageState = iota // not on disk yet, or a record from before this change
+	StorageActive                          // <root>/<RelPath>/           tool loads it
+	StorageWarm                            // <root>/DISABLED_<RelPath>/  extracted, tool ignores it
+	StorageCold                            // <root>/<RelPath>.<ext>      archive, tool ignores it
+	StorageCompressing                     // transition warm -> cold; seen at startup means a crash
+	StorageRestoring                       // transition cold -> active; seen at startup means a crash
+)
+
 type Pack struct {
 	ID       string        `json:"id"`
 	ModID    string        `json:"modId"`
 	FileID   int64         `json:"fileId"`
 	Name     string        `json:"name"`
-	State    InstallState  `json:"state"`
-	Enabled  bool          `json:"enabled"`
-	Priority int           `json:"priority"`
+	State    InstallState  `json:"state"`   // download/extract lifecycle, unchanged
+	Enabled  bool          `json:"enabled"` // kept for the UI; always Storage == StorageActive
 	Manifest ManifestEntry `json:"manifest"`
+
+	// storage tiering
+	Storage       StorageState `json:"storage"`
+	DisabledAt    int64        `json:"disabledAt"`    // unix seconds; set on disable, cleared on enable, 0 = not disabled
+	ExtractedSize int64        `json:"extractedSize"` // real size of the extracted files, for free-space checks
+	ArchiveFormat string       `json:"archiveFormat"` // "zip" or "tar.zst"; empty until first compressed
+	ArchiveSize   int64        `json:"archiveSize"`   // compressed size on disk; 0 while no archive exists
 }
 
 type ModSaved struct {
 	ID              string           `json:"id"`
+	ToolId          string           `json:"toolId"`
 	Submission      Submission       `json:"submission"`
 	SubmissionFiles []SubmissionFile `json:"submissionFiles"`
 	Packs           []Pack           `json:"packages"`
@@ -31,6 +49,7 @@ type ModSaved struct {
 type DataProgress struct {
 	ID        string `json:"id"`
 	PackageID string `json:"packageId"`
+	Kind      string `json:"kind"` // "install" or "storage": says which enum State belongs to
 	State     int    `json:"state"`
 	Total     int64  `json:"total"`
 	Progress  int64  `json:"progress"`

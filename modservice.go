@@ -3,14 +3,19 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
+	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	bolt "go.etcd.io/bbolt"
 )
+
+var ErrPackNotCold = errors.New("pack is not cold")
 
 type ModService struct {
 	app       *application.App
@@ -18,10 +23,22 @@ type ModService struct {
 	gbApi     GbApi
 	fs        *FolderStore
 	db        *bolt.DB
+	sweeper   *Sweeper
 	settings  *SettingsStore
+	modLocks  sync.Map
+}
+
+func (ms *ModService) lockMod(modID string) (unlock func()) {
+	v, _ := ms.modLocks.LoadOrStore(modID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func (ms *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	ms.providers = ProviderRegistry{
+		"gamebanana": NewGameBanana(&GbApi{}),
+	}
 	err := ms.settings.Sync(ms.DefaultSettings())
 	if err != nil {
 		panic(err)
@@ -56,6 +73,9 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 			ms.app.Event.Emit("setting-updated", c)
 		}
 	}()
+
+	ms.sweeper = NewSweeper(ms)
+	go ms.sweeper.Run()
 
 	return nil
 }
@@ -107,18 +127,29 @@ func (ms *ModService) Initial() (map[string]ModSaved, error) {
 	return res, err
 }
 
-func (ms *ModService) setModFolder(key string, reset bool) error {
+func (ms *ModService) rescanXXMI() error {
+	// todo(get path for xxmi)
+	path := ""
+	if path != "" {
+		_, err := SetSettingValue(ms.settings, "xxmi.folder", path)
+		return err
+	}
+
+	return nil
+}
+
+func (ms *ModService) setModFolder(toolId string, reset bool) error {
 	if reset {
 		path, err := GetSetting[string](ms.settings, "xxmi.folder")
 		if err != nil || path == "" {
 			return err
 		}
-		_, err = SetValueOf(ms.settings, key, filepath.Join(path, "WWMI/mods"))
+		_, err = SetSettingValue(ms.settings, toolId, filepath.Join(path, toolId+"/mods"))
 		return err
 	} else {
 		path, err := ms.app.Dialog.
 			OpenFile().
-			SetTitle("Select Folder").
+			SetTitle("Select Folder for" + toolId).
 			CanChooseFiles(false).
 			CanChooseDirectories(true).
 			PromptForSingleSelection()
@@ -127,28 +158,223 @@ func (ms *ModService) setModFolder(key string, reset bool) error {
 			return err
 		}
 
-		_, err = SetValueOf(ms.settings, key, path)
+		_, err = SetSettingValue(ms.settings, toolId+".folder", path)
 		return err
 	}
 }
 
-func (ms *ModService) EnablePacks(modId string, ids []string) error {
-	log.Println("settings ", modId, " packs: ", ids)
-	_, err := ms.updateMod(modId, func(mod *ModSaved) error {
-		for i, p := range mod.Packs {
-			mod.Packs[i].Enabled = slices.Contains(ids, p.ID)
-		}
-		return nil
-	})
+func (ms *ModService) getMod(id string) (ModSaved, error) {
+	var mod ModSaved
+	err := ms.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(DL_BUCKET)
+		data := bucket.Get([]byte(id))
 
-	return err
+		return json.Unmarshal(data, mod)
+	})
+	return mod, err
+}
+
+func (ms *ModService) EnablePacks(modID string, ids []string) error {
+	ms.sweeper.CancelAndWait(modID)
+
+	unlock := ms.lockMod(modID)
+	defer unlock()
+
+	mod, err := ms.getMod(modID)
+	if err != nil {
+		return err
+	}
+
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+
+	var errs []error
+	for _, p := range mod.Packs {
+		var err error
+		switch {
+		case want[p.ID] && p.Storage == StorageActive:
+			// nothing to do
+		case want[p.ID]:
+			err = ms.activate(mod, p) // Warm: rename. Cold: Restoring, extract to temp, rename, Active, delete archive
+		case p.Storage == StorageActive:
+			err = ms.deactivate(mod, p) // rename, then state=Warm with DisabledAt=now
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("pack %s: %w", p.ID, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (ms *ModService) deactivate(mod ModSaved, p Pack) error {
+	if p.Storage != StorageActive {
+		return fmt.Errorf("cannot deactivate pack %s in storage state %d", p.ID, p.Storage)
+	}
+
+	paths, err := ms.packPaths(mod, p)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(paths.disabled); err == nil {
+		return fmt.Errorf("%s already exists", paths.disabled)
+	}
+
+	if err := os.Rename(paths.active, paths.disabled); err != nil {
+		return fmt.Errorf("disable %s (is the game or tool using it?): %w", p.ID, err)
+	}
+
+	if _, err := ms.updatePack(mod.ID, p.ID, func(cur *Pack) error {
+		cur.Enabled = false
+		cur.Storage = StorageWarm
+		cur.DisabledAt = time.Now().Unix()
+		return nil
+	}); err != nil {
+		if rerr := os.Rename(paths.disabled, paths.active); rerr != nil {
+			log.Printf("deactivate: rollback rename failed for %s: %v", p.ID, rerr)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (ms *ModService) activate(mod ModSaved, p Pack) error {
+	paths, err := ms.packPaths(mod, p)
+	if err != nil {
+		return err
+	}
+
+	switch p.Storage {
+	case StorageWarm:
+		if err := os.Rename(paths.disabled, paths.active); err != nil {
+			return err
+		}
+	case StorageCold:
+		if err := ms.restore(mod, p, paths); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("cannot activate pack %s in storage state %d", p.ID, p.Storage)
+	}
+
+	// Files are in place; now record it. No IO inside this transaction.
+	if _, err := ms.updatePack(mod.ID, p.ID, func(cur *Pack) error {
+		cur.Enabled = true
+		cur.Storage = StorageActive
+		cur.DisabledAt = 0
+		cur.ArchiveFormat = ""
+		cur.ArchiveSize = 0
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if p.Storage == StorageCold {
+		if err := os.Remove(paths.archive); err != nil {
+			log.Printf("activate: could not remove archive %s: %v", paths.archive, err)
+		}
+	}
+	return nil
+}
+
+// restore extracts a cold pack into a temp folder and renames it into place.
+// On any failure the archive is untouched and the pack goes back to Cold.
+func (ms *ModService) restore(mod ModSaved, p Pack, paths packPaths) (err error) {
+	if _, err := ms.updatePack(mod.ID, p.ID, func(cur *Pack) error {
+		if cur.Storage != StorageCold {
+			return ErrPackNotCold
+		}
+		cur.Storage = StorageRestoring
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	defer func() {
+		os.RemoveAll(paths.temp)
+		if err != nil {
+			ms.setStorage(mod.ID, p.ID, StorageCold)
+		}
+	}()
+
+	if err = os.RemoveAll(paths.temp); err != nil { // leftover from a crash
+		return err
+	}
+	if err = ms.extractArchive(mod.ID, p.ID, paths.archive, paths.temp); err != nil {
+		return err
+	}
+
+	return os.Rename(paths.temp, paths.active)
+}
+
+func (ms *ModService) extractArchive(modID, packID, archivePath, dst string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return ArchiveExtract(ExtractOptions{
+		ctx:       context.Background(),
+		archive:   f,
+		dst:       dst,
+		overwrite: true,
+		onProgress: func(progress, total int64) {
+			ms.app.Event.Emit("mod-download-progress", DataProgress{
+				ID:        modID,
+				PackageID: packID,
+				Kind:      "storage",
+				State:     int(StorageRestoring),
+				Total:     total,
+				Progress:  progress,
+			})
+		},
+	})
+}
+
+func (ms *ModService) setStorage(modID, packID string, state StorageState) {
+	if _, err := ms.updatePack(modID, packID, func(cur *Pack) error {
+		cur.Storage = state
+		return nil
+	}); err != nil {
+		log.Printf("set storage %d for pack %s: %v", state, packID, err)
+	}
+}
+
+type packPaths struct {
+	active   string // <root>/<dir>/<name>                the tool loads this
+	disabled string // <root>/<dir>/DISABLED_<name>        warm form
+	temp     string // <root>/<dir>/DISABLED_<name>.tmp    extraction target, ignored by the tool
+	archive  string // <root>/<dir>/<name><ArchiveFormat>   cold form
+}
+
+func (ms *ModService) packPaths(mod ModSaved, p Pack) (packPaths, error) {
+	root, err := GetSetting[string](ms.settings, mod.ToolId+".folder")
+	if err != nil {
+		return packPaths{}, err
+	}
+
+	dir := filepath.Join(root, filepath.Dir(p.Manifest.RelPath))
+	base := filepath.Base(p.Manifest.RelPath)
+
+	return packPaths{
+		active:   filepath.Join(dir, base),
+		disabled: filepath.Join(dir, "DISABLED_"+base),
+		temp:     filepath.Join(dir, "DISABLED_"+base+".tmp"),
+		archive:  filepath.Join(dir, base+p.ArchiveFormat),
+	}, nil
 }
 
 func (ms *ModService) Save(sub Submission, files []SubmissionFile, selected []Pack) error {
 	log.Println("saving ModSaved", selected)
 
+	//todo(pass tool id dynamically)
+	toolId := "zzmi"
 	modID := sub.Provider + ":" + sub.Slug
-	outputDir, err := GetSetting[string](ms.settings, "zzmi.folder")
+	outputDir, err := GetSetting[string](ms.settings, toolId+".folder")
 
 	if err != nil || outputDir == "" {
 		log.Println("output dir not canceling save ", modID)
@@ -162,19 +388,20 @@ func (ms *ModService) Save(sub Submission, files []SubmissionFile, selected []Pa
 
 	mod := ModSaved{
 		ID:              modID,
+		ToolId:          toolId,
 		Submission:      sub,
 		SubmissionFiles: files,
 		Packs:           []Pack{},
 	}
 
-	for i, s := range selected {
+	for _, s := range selected {
 		mod.Packs = append(mod.Packs, Pack{
-			ID:       s.ID,
-			ModID:    modID,
-			FileID:   s.FileID,
-			Name:     s.Name,
-			State:    InstallQueued,
-			Priority: i,
+			ID:      s.ID,
+			ModID:   modID,
+			FileID:  s.FileID,
+			Name:    s.Name,
+			State:   InstallQueued,
+			Storage: StorageNone,
 		})
 	}
 
@@ -228,13 +455,12 @@ func (ms *ModService) DefaultSettings() []Setting {
 		).
 			WithIcon("folder").
 			WithActionHandler(ms.settings, "change.zzmi", "Change", func() error {
-				return ms.setModFolder("zzmi.folder", false)
+				return ms.setModFolder("zzmi", false)
 			}).
 			WithActionHandler(ms.settings, "zzmi.xxmi", "Use XXMI's", func() error {
-				return ms.setModFolder("zzmi.folder", true)
+				return ms.setModFolder("zzmi", true)
 			}).
 			MakeUneditable(),
-
 		NewText(
 			"xxmi.folder",
 			CategoryFolders,
@@ -244,11 +470,12 @@ func (ms *ModService) DefaultSettings() []Setting {
 		).
 			WithIcon("folder").
 			WithActionHandler(ms.settings, "change.xxmi", "Change", func() error {
-				return ms.setModFolder("xxmi.folder", false)
+				return ms.setModFolder("xxmi", false)
 			}).
-			WithAction("zzmi.xxmi", "Use XXMI's").
+			WithActionHandler(ms.settings, "xxmi.xxmi", "Rescan", func() error {
+				return ms.rescanXXMI()
+			}).
 			MakeUneditable(),
-
 		// ---- General ----
 		NewDropdown(
 			"general.language",
@@ -265,22 +492,6 @@ func (ms *ModService) DefaultSettings() []Setting {
 			WithSection("General").
 			WithIcon("globe").
 			WithKeywords("locale", "translation"),
-
-		NewSegmented(
-			"general.on_close",
-			CategoryGeneral,
-			"When the window is closed",
-			"Ask each time, keep the app running in the tray, or quit it completely.",
-			[]Option{
-				{Value: "ask", Label: "Ask"},
-				{Value: "tray", Label: "Tray"},
-				{Value: "quit", Label: "Quit"},
-			},
-			"ask",
-		).
-			WithSection("General").
-			WithIcon("x"),
-
 		NewToggle(
 			"general.hide_unconfigured_games",
 			CategoryGeneral,
@@ -290,37 +501,6 @@ func (ms *ModService) DefaultSettings() []Setting {
 		).
 			WithSection("General").
 			WithIcon("layout-grid"),
-
-		NewMultiSelect(
-			"general.notifications",
-			CategoryGeneral,
-			"Notifications",
-			"Choose which events show a notification.",
-			[]Option{
-				{Value: "updates", Label: "Mod updates"},
-				{Value: "downloads", Label: "Downloads"},
-				{Value: "errors", Label: "Errors"},
-			},
-			[]string{"updates", "errors"},
-		).
-			WithSection("General").
-			WithIcon("bell"),
-
-		// ---- Appearance ----
-		NewSegmented(
-			"appearance.interface",
-			CategoryAppearance,
-			"Interface",
-			"The new look, or the Classic layout the app had before.",
-			[]Option{
-				{Value: "modern", Label: "Modern"},
-				{Value: "classic", Label: "Classic"},
-			},
-			"modern",
-		).
-			WithSection("Appearance").
-			WithIcon("layout-grid"),
-
 		NewDropdown(
 			"appearance.theme",
 			CategoryAppearance,
@@ -334,15 +514,5 @@ func (ms *ModService) DefaultSettings() []Setting {
 		).
 			WithSection("Appearance").
 			WithIcon("palette"),
-
-		NewToggle(
-			"appearance.performance_mode",
-			CategoryAppearance,
-			"Performance mode",
-			"No background picture, blur, transparency or heavy shadows. Lightest on slower PCs.",
-			false,
-		).
-			WithSection("Appearance").
-			WithIcon("zap"),
 	}
 }

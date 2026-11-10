@@ -37,21 +37,21 @@ func (g *GameBanana) List(ctx context.Context, p ListParams) (SubmissionList, er
 	return NewListPage(subs, q.Page, res.AMetadata.NRecordCount, res.AMetadata.NPerpage), nil
 }
 
-func (g *GameBanana) Page(ctx context.Context, submissionID string) (Submission, []SubmissionFile, error) {
+func (g *GameBanana) Page(ctx context.Context, submissionID string) (SubmissionPage, error) {
 
 	id, err := strconv.Atoi(submissionID)
 	if err != nil {
-		return Submission{}, nil, err
+		return SubmissionPage{}, err
 	}
 
 	res, err := g.api.ModPage(id)
 	if err != nil {
-		return Submission{}, nil, err
+		return SubmissionPage{}, err
 	}
 
 	s, files := MapModPageResponse(res)
 
-	return s, files, nil
+	return SubmissionPage{s, files}, nil
 }
 
 func int64PtrString(value int64) *string {

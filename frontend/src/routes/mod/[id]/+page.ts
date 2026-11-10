@@ -3,10 +3,10 @@ import type { PageLoad } from './$types';
 
 
 export const load: PageLoad = async ({ params }) => {
-  const [submission, files] = await ModService.Page(Number(params.id));
+  const { submission, submissionFiles } = await ModService.Page("gamebanana", params.id);
 
   return {
     submission: submission,
-    files: files ?? [],
+    files: submissionFiles ?? [],
   };
 };

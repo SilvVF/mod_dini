@@ -48,6 +48,11 @@ export interface CharacterFolder {
 export interface DataProgress {
     "id": string;
     "packageId": string;
+
+    /**
+     * "install" or "storage": says which enum State belongs to
+     */
+    "kind": string;
     "state": number;
     "total": number;
     "progress": number;
@@ -134,6 +139,7 @@ export interface ManifestEntry {
 
 export interface ModSaved {
     "id": string;
+    "toolId": string;
     "submission": Submission;
     "submissionFiles": SubmissionFile[] | null;
     "packages": Pack[] | null;
@@ -154,10 +160,42 @@ export interface Pack {
     "modId": string;
     "fileId": number;
     "name": string;
+
+    /**
+     * download/extract lifecycle, unchanged
+     */
     "state": InstallState;
+
+    /**
+     * kept for the UI; always Storage == StorageActive
+     */
     "enabled": boolean;
-    "priority": number;
     "manifest": ManifestEntry;
+
+    /**
+     * storage tiering
+     */
+    "storage": StorageState;
+
+    /**
+     * unix seconds; set on disable, cleared on enable, 0 = not disabled
+     */
+    "disabledAt": number;
+
+    /**
+     * real size of the extracted files, for free-space checks
+     */
+    "extractedSize": number;
+
+    /**
+     * "zip" or "tar.zst"; empty until first compressed
+     */
+    "archiveFormat": string;
+
+    /**
+     * compressed size on disk; 0 while no archive exists
+     */
+    "archiveSize": number;
 }
 
 export interface RootFolder {
@@ -244,6 +282,43 @@ export interface SortConfig {
     "by": SortBy;
     "ascending": boolean;
 }
+
+export enum StorageState {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = 0,
+
+    /**
+     * not on disk yet, or a record from before this change
+     */
+    StorageNone = 0,
+
+    /**
+     * <root>/<RelPath>/           tool loads it
+     */
+    StorageActive = 1,
+
+    /**
+     * <root>/DISABLED_<RelPath>/  extracted, tool ignores it
+     */
+    StorageWarm = 2,
+
+    /**
+     * <root>/<RelPath>.<ext>      archive, tool ignores it
+     */
+    StorageCold = 3,
+
+    /**
+     * transition warm -> cold; seen at startup means a crash
+     */
+    StorageCompressing = 4,
+
+    /**
+     * transition cold -> active; seen at startup means a crash
+     */
+    StorageRestoring = 5,
+};
 
 export interface Subfolder {
     "id": string;

@@ -25,8 +25,8 @@ export function EmitDownloadProgress(mod: $models.ModSaved, pkg: $models.Pack, t
     return $Call.ByID(2400628177, mod, pkg, total, progress);
 }
 
-export function EnablePacks(modId: string, ids: string[] | null): $CancellablePromise<void> {
-    return $Call.ByID(1887951704, modId, ids);
+export function EnablePacks(modID: string, ids: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(1887951704, modID, ids);
 }
 
 export function FolderConfig(): $CancellablePromise<$models.RootFolder> {
