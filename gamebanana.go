@@ -165,7 +165,7 @@ func MapModPageResponse(record ModPageResponse) (Submission, []SubmissionFile) {
 			Provider:       submission.Provider,
 			SubmissionType: submission.SubmissionType,
 			SubmissionID:   submission.SubmissionID,
-			FileID:         file.IDRow,
+			FileID:         strconv.FormatInt(file.IDRow, 10),
 			FileName:       file.SFile,
 			Size:           file.NFilesize,
 			Description:    file.SDescription,

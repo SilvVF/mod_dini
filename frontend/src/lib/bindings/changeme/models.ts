@@ -158,7 +158,7 @@ export interface Option {
 export interface Pack {
     "id": string;
     "modId": string;
-    "fileId": number;
+    "fileId": string;
     "name": string;
 
     /**
@@ -365,7 +365,7 @@ export interface SubmissionFile {
     "provider": string;
     "submissionType": string;
     "submissionId": string;
-    "fileId": number;
+    "fileId": string;
     "fileName": string;
     "size": number;
     "description": string;

@@ -57,7 +57,7 @@
   const subfolders = $derived(Object.entries(data.subfolders));
 
   const groupedMods = $derived(
-    groupModsByFolders(saved.mods, data.characters, data.subfolders),
+    groupModsByFolders(saved.mods, data.rootFolder, data.characters, data.subfolders),
   );
 
   const selectedGroups = $derived(

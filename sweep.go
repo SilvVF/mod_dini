@@ -246,7 +246,7 @@ func (s *Sweeper) compressPack(
 		return err
 	}
 
-	modDir := filepath.Join(toolDir, m.Submission.Provider, m.Submission.Slug)
+	modDir := filepath.Join(toolDir, m.Submission.Provider, m.Submission.SubmissionID)
 	packDir := filepath.Join(modDir, "DISABLED_"+p.ID)
 	archivePath := filepath.Join(modDir, p.ID+".part")
 

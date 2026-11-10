@@ -22,7 +22,7 @@
 </script>
 
 <a
-  href={`/mod/${submission.submissionId}`}
+  href={`/mod/${submission.provider}/${submission.slug}`}
   class="flex gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent"
 >
   <div class="h-20 w-28 shrink-0 overflow-hidden rounded-md bg-muted">

@@ -39,7 +39,7 @@
     getScrollElement: () => container!,
     estimateSize: () => 160,
     overscan: 5,
-    getItemKey: (index) => submissions[index]?.slug ?? "",
+    getItemKey: (index) => submissions[index]?.submissionId ?? "",
   });
 
   $effect(() => {

@@ -7,13 +7,14 @@
   import type {
     CharacterFolder,
     ModSaved,
+    RootFolder,
     Subfolder,
   } from "#lib/bindings/changeme/index.ts";
   import Skeleton from "../ui/skeleton/skeleton.svelte";
 
   export interface GroupedCharacter {
     name: string;
-    folder: CharacterFolder | Subfolder;
+    folder: CharacterFolder | Subfolder | RootFolder;
     local: ModSaved;
   }
 

@@ -2,14 +2,15 @@ import {
   InstallState,
   type CharacterFolder,
   type ModSaved,
-  type Package,
+  type Pack,
+  type RootFolder,
   type Subfolder,
   type SubmissionFile,
 } from "../bindings/changeme";
 
 export type ModGroup = {
   name: string;
-  folder: CharacterFolder | Subfolder;
+  folder: CharacterFolder | Subfolder | RootFolder;
   count: number;
   items: ModSaved[];
 };
@@ -25,7 +26,7 @@ export type PackageStatus =
 
 export function statusOf(
   file: SubmissionFile,
-  local: Package | undefined,
+  local: Pack | undefined,
 ): PackageStatus {
   if (!local) return "available";
   switch (local.state) {
@@ -48,7 +49,7 @@ export function statusOf(
 
 export type PackageView = {
   file: SubmissionFile;
-  pack: Package;
+  pack: Pack;
   status: PackageStatus;
   enabled: boolean;
 };
@@ -60,6 +61,7 @@ export type SelectedItem =
 
 export function groupModsByFolders(
   mods: Record<string, ModSaved>,
+  root: RootFolder,
   characters: Record<string, CharacterFolder>,
   subfolders: Record<string, Subfolder>,
 ): ModGroup[] {
@@ -91,7 +93,7 @@ export function groupModsByFolders(
       };
     });
 
-  return [
+  const groups = [
     ...Object.entries(characters).flatMap(([name, folder]) =>
       groupBySources(name, folder),
     ),
@@ -99,4 +101,21 @@ export function groupModsByFolders(
       groupBySources(name, folder),
     ),
   ];
+
+  const groupedMods = new Set(groups.flatMap((group) => group.items));
+
+  const uncategorizedMods = Object.values(mods).filter(
+    (mod) => mod.toolId === root.id && !groupedMods.has(mod),
+  );
+
+  if (uncategorizedMods.length > 0) {
+    groups.push({
+      name: root.id,
+      folder: root,
+      count: uncategorizedMods.length,
+      items: uncategorizedMods,
+    });
+  }
+
+  return groups;
 }

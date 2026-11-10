@@ -18,7 +18,7 @@
         Object.values(saved.mods).find(
             (v) =>
                 v.submission.provider === submission?.provider &&
-                v.submission.slug === submission?.slug,
+                v.submission.submissionId === submission?.submissionId,
         ),
     );
 

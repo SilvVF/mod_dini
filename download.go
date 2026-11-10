@@ -113,7 +113,7 @@ func (ms *ModService) downloadPackage(
 	subFile, ok := mod.SubmissionFileForPackage(pkg)
 
 	if !ok {
-		return fmt.Errorf("no submission file with id %d", pkg.FileID)
+		return fmt.Errorf("no submission file with id %s", pkg.FileID)
 	}
 
 	log.Printf(
@@ -150,7 +150,7 @@ func (ms *ModService) downloadPackage(
 		return err
 	}
 
-	dst := filepath.Join(outputDir, mod.Submission.Provider, mod.Submission.Slug, pkg.ID)
+	dst := filepath.Join(outputDir, mod.Submission.Provider, mod.Submission.SubmissionID, pkg.ID)
 	relPath, err := filepath.Rel(outputDir, dst)
 	if err != nil {
 		return fmt.Errorf("rel path: %w", err)

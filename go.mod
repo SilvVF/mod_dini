@@ -3,6 +3,7 @@ module changeme
 go 1.26.0
 
 require (
+	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/mholt/archives v0.1.5
 	github.com/wailsapp/wails/v3 v3.0.0
 	go.etcd.io/bbolt v1.5.0
@@ -13,6 +14,7 @@ require (
 	github.com/STARRY-S/zip v0.2.3 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/bodgit/plumbing v1.3.0 // indirect
 	github.com/bodgit/sevenzip v1.6.1 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect
@@ -33,6 +35,7 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 )

@@ -38,6 +38,7 @@ func (ms *ModService) lockMod(modID string) (unlock func()) {
 func (ms *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	ms.providers = ProviderRegistry{
 		"gamebanana": NewGameBanana(&GbApi{}),
+		"huihui":     &HuiHuiProvider{},
 	}
 	err := ms.settings.Sync(ms.DefaultSettings())
 	if err != nil {
@@ -372,7 +373,7 @@ func (ms *ModService) Save(sub Submission, files []SubmissionFile, selected []Pa
 
 	//todo(pass tool id dynamically)
 	toolId := "zzmi"
-	modID := sub.Provider + ":" + sub.Slug
+	modID := sub.Provider + ":" + sub.SubmissionID
 	outputDir, err := GetSetting[string](ms.settings, toolId+".folder")
 
 	if err != nil || outputDir == "" {
@@ -380,7 +381,7 @@ func (ms *ModService) Save(sub Submission, files []SubmissionFile, selected []Pa
 		return err
 	}
 
-	modDir := filepath.Join(outputDir, sub.Provider, sub.Slug)
+	modDir := filepath.Join(outputDir, sub.Provider, sub.SubmissionID)
 	if err := os.RemoveAll(modDir); err != nil {
 		return err
 	}

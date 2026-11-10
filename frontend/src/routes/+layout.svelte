@@ -4,7 +4,7 @@
   import type { LayoutProps } from "./$types";
   import { setSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import Button from "#lib/components/ui/button/button.svelte";
-  import { Globe, Settings } from "@lucide/svelte";
+  import { Globe, Globe2, Settings } from "@lucide/svelte";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { SvelteQueryDevtools } from "@tanstack/svelte-query-devtools";
   import { setSettingsContext } from "#lib/contexts/settings.svelte.ts";
@@ -56,6 +56,9 @@
 
       <Button variant="ghost" size="icon" href="/source/gamebanana/30305">
         <Globe class="size-4" />
+      </Button>
+      <Button variant="ghost" size="icon" href="/source/huihui/zzz">
+        <Globe2 class="size-4" />
       </Button>
     </header>
 

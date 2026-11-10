@@ -24,7 +24,7 @@ const (
 type Pack struct {
 	ID       string        `json:"id"`
 	ModID    string        `json:"modId"`
-	FileID   int64         `json:"fileId"`
+	FileID   string        `json:"fileId"`
 	Name     string        `json:"name"`
 	State    InstallState  `json:"state"`   // download/extract lifecycle, unchanged
 	Enabled  bool          `json:"enabled"` // kept for the UI; always Storage == StorageActive
@@ -98,7 +98,7 @@ type SubmissionFile struct {
 	Provider       string `json:"provider"`
 	SubmissionType string `json:"submissionType"`
 	SubmissionID   string `json:"submissionId"`
-	FileID         int64  `json:"fileId"`
+	FileID         string `json:"fileId"`
 	FileName       string `json:"fileName"`
 	Size           int64  `json:"size"`
 	Description    string `json:"description"`
