@@ -6,7 +6,7 @@ export const prerender = true;
 export const ssr = false;
 
 export const load: LayoutLoad = async ({ params }) => {
-  const rootFolder = await ModService.FolderConfig();
+  const rootFolder = await ModService.FolderConfig("zzmi");
   const settings = await ModService.Settings();
 
   const mods = await ModService.Initial();

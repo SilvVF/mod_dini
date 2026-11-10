@@ -80,8 +80,7 @@
     game: {
       id: "zzmi",
       name: "Zenless Zone Zero",
-      image:
-        "https://images.gamebanana.com/img/Webpage/Game/Profile/Background/66868c3874664.jpg",
+      image: "https://images.gamebanana.com/img/Webpage/Game/Profile/Background/66868c3874664.jpg",
     },
     preset: {
       id: "p1",
@@ -133,7 +132,7 @@
 <div class="overflow-clip">
   <Resizable.PaneGroup
     direction="horizontal"
-    class="h-full rounded-sm border w-full overflow-clip max-h-[90vh]"
+    class="h-full rounded-sm border w-full overflow-clip min-h-[90vh] max-h-[90vh]"
   >
     <Resizable.Pane defaultSize={20} maxSize={40} minSize={10}>
       <div class="overflow-y-scroll h-full">

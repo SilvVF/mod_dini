@@ -1,87 +1,87 @@
 <script lang="ts">
-  import { InstallState } from "#lib/bindings/changeme/index.ts";
-  import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
-  import SubmissionFilePreview from "#lib/components/dini/SubmissionFilePreview.svelte";
-  import SubmissionPreview from "#lib/components/dini/SubmissionPreview.svelte";
-  import Progress from "#lib/components/ui/progress/progress.svelte";
-  import { statusOf, type PackageView } from "#lib/contexts/group-mods.ts";
-  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
-  import type { PageProps } from "./$types";
+    import { InstallState } from "#lib/bindings/changeme/index.ts";
+    import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
+    import SubmissionFilePreview from "#lib/components/dini/SubmissionFilePreview.svelte";
+    import SubmissionPreview from "#lib/components/dini/SubmissionPreview.svelte";
+    import Progress from "#lib/components/ui/progress/progress.svelte";
+    import { statusOf, type PackageView } from "#lib/contexts/group-mods.ts";
+    import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
+    import type { PageProps } from "./$types";
 
-  let { data }: PageProps = $props();
+    let { data }: PageProps = $props();
 
-  const submission = $derived(data.submission);
-  const files = $derived(data.files);
+    const submission = $derived(data.submission);
+    const files = $derived(data.files);
 
-  const saved = getSavedModsContext();
-  const localMod = $derived(
-    Object.values(saved.mods).find(
-      (v) =>
-        v.submission.provider === submission?.provider &&
-        v.submission.slug === submission?.slug,
-    ),
-  );
-
-  const dlProgress = $derived(
-    localMod ? saved.dlProgress[localMod.id] : undefined,
-  );
-
-  const packages = $derived.by<PackageView[]>(() => {
-    const localPacks = localMod?.packages ?? [];
-    return files.map((file) => {
-      const installed = localPacks.find((pack) => {
-        pack.fileId === file.fileId;
-      });
-
-      return {
-        file: file,
-        pack: installed ?? {
-          id: file.fileId.toString(),
-          modId: `${submission.provider}:${submission.slug}`,
-          fileId: file.fileId,
-          name: file.fileName,
-          state: InstallState.$zero,
-          enabled: false,
-          priority: 0,
-          manifest: {
-            relPath: file.fileName,
-            size: file.size,
-            hash: file.md5Checksum,
-          },
-        },
-        status: statusOf(file, installed),
-        enabled: installed !== undefined,
-      };
-    });
-  });
-
-  function handleConfirmDownload(selected: PackageView[]) {
-    saved.add(
-      submission,
-      files,
-      selected.map((s) => s.pack),
+    const saved = getSavedModsContext();
+    const localMod = $derived(
+        Object.values(saved.mods).find(
+            (v) =>
+                v.submission.provider === submission?.provider &&
+                v.submission.slug === submission?.slug,
+        ),
     );
-  }
+
+    const dlProgress = $derived(
+        localMod ? saved.dlProgress[localMod.id] : undefined,
+    );
+
+    const packages = $derived.by<PackageView[]>(() => {
+        const localPacks = localMod?.packages;
+        return files.map((file) => {
+            const installed = localPacks?.find(
+                (pack) => pack.fileId === file.fileId,
+            );
+
+            return {
+                file: file,
+                local: installed !== undefined,
+                pack: installed ?? {
+                    id: file.fileId.toString(),
+                    modId: `${submission.provider}:${submission.slug}`,
+                    fileId: file.fileId,
+                    name: file.fileName,
+                    state: InstallState.$zero,
+                    enabled: false,
+                    manifest: {
+                        relPath: "",
+                        size: file.size,
+                        hash: file.md5Checksum,
+                    },
+                },
+                status: statusOf(file, installed),
+                enabled: installed !== undefined,
+            };
+        });
+    });
+
+    function handleConfirmDownload(selected: PackageView[]) {
+        saved.add(
+            submission,
+            files,
+            selected.map((s) => s.pack),
+        );
+    }
 </script>
 
 {#if submission}
-  <div class="flex flex-col space-y-4">
-    {#if localMod}
-      <p>Local mod: {localMod.id}</p>
-    {/if}
-    <Progress
-      value={dlProgress?.progress}
-      max={dlProgress?.total}
-      class="w-[60%]"
-    />
-    <SubmissionPreview {submission} />
-    <SubmissionFilePreview {files} isDownloadable={true} />
+    <div class="flex flex-col space-y-4">
+        {#if localMod}
+            <p>Local mod: {localMod.id}</p>
+        {/if}
+        <Progress
+            value={dlProgress?.progress}
+            max={dlProgress?.total}
+            class="w-[60%]"
+        />
+        <SubmissionPreview {submission} />
+        <SubmissionFilePreview {files} isDownloadable={true} />
 
-    <FileSelectDialog
-      packageView={packages}
-      modName={submission?.name}
-      onConfirm={handleConfirmDownload}
-      onCancel={() => {}}
-    />
-  </div>
+        <FileSelectDialog
+            packageView={packages}
+            modName={submission?.name}
+            onConfirm={handleConfirmDownload}
+            onCancel={() => {}}
+        />
+    </div>
 {/if}

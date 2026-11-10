@@ -53,11 +53,11 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 	}
 
 	ms.fs.CreateIfNotExists(
-		"zzz",
+		"zzmi",
 		"Zenless Zone Zero",
 	)
 
-	_, err = ms.fs.Update("zzz", func(folder *RootFolder) error {
+	_, err = ms.fs.Update("zzmi", func(folder *RootFolder) error {
 		folder.Characters = ZenlessCharacters
 		return nil
 	})
@@ -80,8 +80,8 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 	return nil
 }
 
-func (ms *ModService) FolderConfig() (RootFolder, error) {
-	f, err := ms.fs.Get("zzz")
+func (ms *ModService) FolderConfig(toolId string) (RootFolder, error) {
+	f, err := ms.fs.Get(toolId)
 
 	if err != nil {
 		log.Println("folder get ", err)
@@ -169,7 +169,7 @@ func (ms *ModService) getMod(id string) (ModSaved, error) {
 		bucket := tx.Bucket(DL_BUCKET)
 		data := bucket.Get([]byte(id))
 
-		return json.Unmarshal(data, mod)
+		return json.Unmarshal(data, &mod)
 	})
 	return mod, err
 }
@@ -260,7 +260,6 @@ func (ms *ModService) activate(mod ModSaved, p Pack) error {
 		return fmt.Errorf("cannot activate pack %s in storage state %d", p.ID, p.Storage)
 	}
 
-	// Files are in place; now record it. No IO inside this transaction.
 	if _, err := ms.updatePack(mod.ID, p.ID, func(cur *Pack) error {
 		cur.Enabled = true
 		cur.Storage = StorageActive

@@ -184,6 +184,7 @@ func (ms *ModService) downloadPackage(
 		p.State = InstallReady
 		p.Storage = StorageActive
 		p.Enabled = true
+		p.FileID = subFile.FileID
 		p.Manifest = ManifestEntry{
 			RelPath: relPath,
 			Size:    size,

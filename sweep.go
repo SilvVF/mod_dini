@@ -261,7 +261,7 @@ func (s *Sweeper) compressPack(
 		ctx,
 		nil,
 		map[string]string{
-			packDir: "",
+			packDir + string(filepath.Separator): "",
 		},
 	)
 	if err != nil {

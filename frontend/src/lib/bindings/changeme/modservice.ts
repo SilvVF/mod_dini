@@ -29,8 +29,8 @@ export function EnablePacks(modID: string, ids: string[] | null): $CancellablePr
     return $Call.ByID(1887951704, modID, ids);
 }
 
-export function FolderConfig(): $CancellablePromise<$models.RootFolder> {
-    return $Call.ByID(697513691);
+export function FolderConfig(toolId: string): $CancellablePromise<$models.RootFolder> {
+    return $Call.ByID(697513691, toolId);
 }
 
 export function Initial(): $CancellablePromise<{ [_ in string]?: $models.ModSaved } | null> {

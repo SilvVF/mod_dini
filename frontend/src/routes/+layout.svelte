@@ -59,7 +59,7 @@
       </Button>
     </header>
 
-    <main class="min-h-0 min-w-0 max-h-[90vh] flex-1 overflow-y-auto">
+    <main class="min-h-0 min-w-0 max-h-[90vh] flex-1 overflow-hidden">
       {@render children()}
     </main>
   </div>
