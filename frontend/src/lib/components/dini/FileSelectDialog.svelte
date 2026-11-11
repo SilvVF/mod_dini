@@ -14,11 +14,11 @@
         onConfirm: (packs: PackageView[]) => void;
         onCancel: () => void;
         modName?: string;
+        open: boolean;
     }
 
-    let { packageView, onConfirm, onCancel, modName = "Mod" }: Props = $props();
+    let { packageView, onConfirm, onCancel, modName = "Mod", open = $bindable(false) }: Props = $props();
 
-    let open = $state(false);
     const selectedIds = new SvelteSet<string>();
 
     // Rows mid-install can't be toggled
@@ -93,7 +93,7 @@
 <Dialog.Root bind:open>
     <Dialog.Trigger>
         {#snippet child({ props })}
-            <Button {...props}>DL</Button>
+            <Button {...props}>Download Mod</Button>
         {/snippet}
     </Dialog.Trigger>
 
@@ -191,7 +191,7 @@
                     class="flex items-center gap-2 text-sm text-muted-foreground"
                 >
                     <HardDrive class="size-4" />
-                    Total: {formatSize(totalSize)}
+                    Total: {totalSize === 0 ? 0 : formatSize(totalSize)}
                 </div>
 
                 <div class="flex items-center gap-2">

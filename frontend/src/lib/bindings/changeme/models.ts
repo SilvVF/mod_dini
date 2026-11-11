@@ -352,7 +352,7 @@ export interface Submission {
     "remoteUpdatedAt": number;
     "filesUpdatedAt": number;
     "lastSeenSnapshot": string | null;
-    "images": string;
+    "images": string[] | null;
     "audioUrl": string | null;
     "tags": string;
     "developmentState": string | null;

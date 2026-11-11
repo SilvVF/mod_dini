@@ -268,7 +268,6 @@ func (h *HuiHuiProvider) ParseSubmissionPage(ctx context.Context, r io.Reader) (
 	})
 	downloadURL := article.Find(".resource-panel a.download-button").AttrOr("href", "")
 
-	imagesJSON, _ := json.Marshal(images)
 	if tags == nil {
 		tags = []string{}
 	}
@@ -290,7 +289,7 @@ func (h *HuiHuiProvider) ParseSubmissionPage(ctx context.Context, r io.Reader) (
 		RemoteAddedAt:   added,
 		RemoteUpdatedAt: updated,
 		FilesUpdatedAt:  updated,
-		Images:          string(imagesJSON),
+		Images:          images,
 		Tags:            string(tagsJSON),
 		ThumbnailURL:    thumb,
 	}
@@ -440,7 +439,6 @@ func parseCard(s *goquery.Selection, chars []string) (Submission, bool) {
 	if coverURL != nil {
 		images = append(images, *coverURL)
 	}
-	imagesJSON, _ := json.Marshal(images)
 	tagsJSON, _ := json.Marshal(tags)
 
 	sub := Submission{
@@ -456,7 +454,7 @@ func parseCard(s *goquery.Selection, chars []string) (Submission, bool) {
 		IsNSFW:          contains(tags, "nsfw"),
 		RemoteAddedAt:   added,
 		RemoteUpdatedAt: added,
-		Images:          string(imagesJSON),
+		Images:          images,
 		Tags:            string(tagsJSON),
 	}
 	if a := guessAuthor(tags); a != "" {

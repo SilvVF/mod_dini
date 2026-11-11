@@ -62,35 +62,35 @@
       </Button>
     </header>
 
-    <main class="min-h-0 min-w-0 max-h-[90vh] flex-1 overflow-hidden">
+    <main class="flex max-h-[90vh] min-h-0 flex-1 flex-col overflow-hidden">
       {@render children()}
     </main>
-  </div>
-  <Dialog.Root
-    open={!!page.state.settings}
-    onOpenChange={(open) => {
-      if (!open) history.back();
-    }}
-  >
-    <Dialog.Content
-      showCloseButton={false}
-      class="h-[min(85vh,44rem)] w-[min(94vw,60rem)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none"
+    <Dialog.Root
+      open={!!page.state.settings}
+      onOpenChange={(open) => {
+        if (!open) history.back();
+      }}
     >
-      {#if category}
-        <SettingsView
-          {category}
-          onnavigate={(c) => {
-            goto(`/settings/${c}`, {
-              shallow: true,
-              replace: true,
-              state: { settings: { category: c } },
-            });
-          }}
-          onclose={() => history.back()}
-        />
-      {/if}
-    </Dialog.Content>
-  </Dialog.Root>
+      <Dialog.Content
+        showCloseButton={false}
+        class="h-[min(85vh,44rem)] w-[min(94vw,60rem)] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none"
+      >
+        {#if category}
+          <SettingsView
+            {category}
+            onnavigate={(c) => {
+              goto(`/settings/${c}`, {
+                shallow: true,
+                replace: true,
+                state: { settings: { category: c } },
+              });
+            }}
+            onclose={() => history.back()}
+          />
+        {/if}
+      </Dialog.Content>
+    </Dialog.Root>
 
-  <SvelteQueryDevtools />
-</QueryClientProvider>
+    <SvelteQueryDevtools />
+  </div></QueryClientProvider
+>

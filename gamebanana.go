@@ -54,15 +54,6 @@ func (g *GameBanana) Page(ctx context.Context, submissionID string) (SubmissionP
 	return SubmissionPage{s, files}, nil
 }
 
-func int64PtrString(value int64) *string {
-	if value == 0 {
-		return nil
-	}
-
-	s := strconv.FormatInt(value, 10)
-	return &s
-}
-
 func extractSlug(profileURL string, id int) string {
 	if parsed, err := url.Parse(profileURL); err == nil {
 		slug := path.Base(strings.TrimRight(parsed.Path, "/"))
@@ -74,59 +65,36 @@ func extractSlug(profileURL string, id int) string {
 	return strconv.Itoa(id)
 }
 
-func MapModPageResponse(record ModPageResponse) (Submission, []SubmissionFile) {
-	submissionType := "Mod"
-
-	category := strconv.Itoa(int(record.ACategory.IDRow))
-	images, _ := json.Marshal(record.APreviewMedia.AImages)
-
-	var hero *string
+func thumbnailWithImages(media APreviewMedia) (*string, []string) {
 	var thumbnail *string
+	images := []string{}
 
-	for _, img := range record.APreviewMedia.AImages {
+	for _, img := range media.AImages {
 		baseURL := strings.TrimRight(img.SBaseURL, "/")
 
-		imageURL := func(file string) string {
-			if file == "" {
-				return ""
-			}
-			return baseURL + "/" + strings.TrimLeft(file, "/")
+		if img.SFile == "" {
+			continue
 		}
-
-		if hero == nil {
-			for _, file := range []*string{
-				img.SFile800,
-				img.SFile530,
-				&img.SFile,
-			} {
-				if file != nil {
-					if u := imageURL(*file); u != "" {
-						hero = &u
-						break
-					}
-				}
-			}
-		}
-
-		if thumbnail == nil {
-			for _, file := range []string{
-				*img.SFile220,
-				img.SFile100,
-				img.SFile,
-			} {
-				if u := imageURL(file); u != "" {
-					thumbnail = &u
-					break
-				}
-			}
-		}
+		imageUrl := baseURL + "/" + strings.TrimLeft(img.SFile, "/")
+		images = append(images, imageUrl)
 	}
 
-	tags, _ := json.Marshal([]string{})
+	if len(images) > 0 {
+		thumbnail = &images[0]
+	}
+
+	return thumbnail, images
+}
+
+func MapModPageResponse(record ModPageResponse) (Submission, []SubmissionFile) {
+	submissionType := "Mod"
+	category := strconv.FormatInt(record.ACategory.IDRow, 10)
+	tags, _ := json.Marshal(record.AContentRatings)
 
 	var completionPercentage *int
 
 	authorRemoteId := strconv.FormatInt(record.ASubmitter.IDRow, 10)
+	thumbnail, images := thumbnailWithImages(record.APreviewMedia)
 
 	submission := Submission{
 		Provider:             "gamebanana",
@@ -138,7 +106,7 @@ func MapModPageResponse(record ModPageResponse) (Submission, []SubmissionFile) {
 		Description:          record.SText,
 		ProfileURL:           record.SProfileURL,
 		Category:             category,
-		Hero:                 hero,
+		Hero:                 nil,
 		IsAudio:              false,
 		IsMap:                false,
 		IsNSFW:               len(record.AContentRatings) > 0,
@@ -151,7 +119,7 @@ func MapModPageResponse(record ModPageResponse) (Submission, []SubmissionFile) {
 		RemoteAddedAt:        record.TsDateAdded,
 		RemoteUpdatedAt:      record.TsDateUpdated,
 		FilesUpdatedAt:       0,
-		Images:               string(images),
+		Images:               images,
 		Tags:                 string(tags),
 		CompletionPercentage: completionPercentage,
 		AuthorRemoteID:       &authorRemoteId,
@@ -195,37 +163,14 @@ func MapCategoryRecord(record CategoryRecord) Submission {
 	if category == "" {
 		category = record.SName
 	}
-
-	images, _ := json.Marshal(record.APreviewMedia.AImages)
 	tags, _ := json.Marshal(record.ATags)
-
-	var thumbnail *string
-
-	for _, img := range record.APreviewMedia.AImages {
-		baseURL := strings.TrimRight(img.SBaseURL, "/")
-
-		imageURL := func(file string) string {
-			if file == "" {
-				return ""
-			}
-			return baseURL + "/" + strings.TrimLeft(file, "/")
-		}
-
-		if thumbnail == nil {
-			for _, file := range []string{img.SFile220, img.SFile100, img.SFile} {
-				if u := imageURL(file); u != "" {
-					thumbnail = &u
-					break
-				}
-			}
-		}
-	}
 
 	remoteUpdatedAt := record.TsDateUpdated
 	if remoteUpdatedAt == 0 {
 		remoteUpdatedAt = record.TsDateModified
 	}
-	authorRemoteId := strconv.Itoa(record.ASubmitter.IDRow)
+	authorRemoteId := strconv.FormatInt(record.ASubmitter.IDRow, 10)
+	thumbnail, images := thumbnailWithImages(record.APreviewMedia)
 
 	return Submission{
 		Provider:        "gamebanana",
@@ -248,7 +193,7 @@ func MapCategoryRecord(record CategoryRecord) Submission {
 		RemoteAddedAt:   int64(record.TsDateAdded),
 		RemoteUpdatedAt: int64(remoteUpdatedAt),
 		FilesUpdatedAt:  0,
-		Images:          string(images),
+		Images:          images,
 		Tags:            string(tags),
 		AuthorRemoteID:  &authorRemoteId,
 		ThumbnailURL:    thumbnail,

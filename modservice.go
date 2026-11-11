@@ -430,7 +430,23 @@ func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
 		return SubmissionPage{}, err
 	}
 
-	return prov.Page(context.Background(), pageId)
+	p, err := prov.Page(context.Background(), pageId)
+
+	if err != nil {
+		return p, err
+	}
+
+	// resolve the local name for the category of this page
+	f, err := ms.fs.Get("zzmi")
+	for _, character := range f.Characters.Characters {
+		categoryId := character.Sources[providerId]
+		if categoryId == p.Submission.Category {
+			p.Submission.Hero = &character.Name
+			break
+		}
+	}
+
+	return p, nil
 }
 
 func (ms *ModService) List(p ListParams) (SubmissionList, error) {

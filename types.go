@@ -62,36 +62,36 @@ type ManifestEntry struct {
 }
 
 type Submission struct {
-	Provider             string  `db:"provider" json:"provider"`
-	SubmissionType       string  `db:"submission_type" json:"submissionType"`
-	SubmissionID         string  `db:"submission_id" json:"submissionId"`
-	Slug                 string  `db:"slug" json:"slug"`
-	Name                 string  `db:"name" json:"name"`
-	Author               string  `db:"author" json:"author"`
-	Description          string  `db:"description" json:"description"`
-	ProfileURL           string  `db:"profile_url" json:"profileUrl"`
-	Category             string  `db:"category" json:"category"`
-	Hero                 *string `db:"hero" json:"hero"`
-	IsAudio              bool    `db:"is_audio" json:"isAudio"`
-	IsMap                bool    `db:"is_map" json:"isMap"`
-	IsNSFW               bool    `db:"is_nsfw" json:"isNsfw"`
-	IsObsolete           bool    `db:"is_obsolete" json:"isObsolete"`
-	IsTombstoned         bool    `db:"is_tombstoned" json:"isTombstoned"`
-	IsHydrated           bool    `db:"is_hydrated" json:"isHydrated"`
-	HasFiles             bool    `db:"has_files" json:"hasFiles"`
-	ViewCount            int     `db:"view_count" json:"viewCount"`
-	Likes                int64   `db:"likes" json:"likes"`
-	RemoteAddedAt        int64   `db:"remote_added_at" json:"remoteAddedAt"`
-	RemoteUpdatedAt      int64   `db:"remote_updated_at" json:"remoteUpdatedAt"`
-	FilesUpdatedAt       int64   `db:"files_updated_at" json:"filesUpdatedAt"`
-	LastSeenSnapshot     *string `db:"last_seen_snapshot" json:"lastSeenSnapshot"`
-	Images               string  `db:"images" json:"images"`
-	AudioURL             *string `db:"audio_url" json:"audioUrl"`
-	Tags                 string  `db:"tags" json:"tags"`
-	DevelopmentState     *string `db:"development_state" json:"developmentState"`
-	CompletionPercentage *int    `db:"completion_percentage" json:"completionPercentage"`
-	AuthorRemoteID       *string `db:"author_remote_id" json:"authorRemoteId"`
-	ThumbnailURL         *string `db:"thumbnail_url" json:"thumbnailUrl"`
+	Provider             string   `db:"provider" json:"provider"`
+	SubmissionType       string   `db:"submission_type" json:"submissionType"`
+	SubmissionID         string   `db:"submission_id" json:"submissionId"`
+	Slug                 string   `db:"slug" json:"slug"`
+	Name                 string   `db:"name" json:"name"`
+	Author               string   `db:"author" json:"author"`
+	Description          string   `db:"description" json:"description"`
+	ProfileURL           string   `db:"profile_url" json:"profileUrl"`
+	Category             string   `db:"category" json:"category"`
+	Hero                 *string  `db:"hero" json:"hero"`
+	IsAudio              bool     `db:"is_audio" json:"isAudio"`
+	IsMap                bool     `db:"is_map" json:"isMap"`
+	IsNSFW               bool     `db:"is_nsfw" json:"isNsfw"`
+	IsObsolete           bool     `db:"is_obsolete" json:"isObsolete"`
+	IsTombstoned         bool     `db:"is_tombstoned" json:"isTombstoned"`
+	IsHydrated           bool     `db:"is_hydrated" json:"isHydrated"`
+	HasFiles             bool     `db:"has_files" json:"hasFiles"`
+	ViewCount            int      `db:"view_count" json:"viewCount"`
+	Likes                int64    `db:"likes" json:"likes"`
+	RemoteAddedAt        int64    `db:"remote_added_at" json:"remoteAddedAt"`
+	RemoteUpdatedAt      int64    `db:"remote_updated_at" json:"remoteUpdatedAt"`
+	FilesUpdatedAt       int64    `db:"files_updated_at" json:"filesUpdatedAt"`
+	LastSeenSnapshot     *string  `db:"last_seen_snapshot" json:"lastSeenSnapshot"`
+	Images               []string `db:"images" json:"images"`
+	AudioURL             *string  `db:"audio_url" json:"audioUrl"`
+	Tags                 string   `db:"tags" json:"tags"`
+	DevelopmentState     *string  `db:"development_state" json:"developmentState"`
+	CompletionPercentage *int     `db:"completion_percentage" json:"completionPercentage"`
+	AuthorRemoteID       *string  `db:"author_remote_id" json:"authorRemoteId"`
+	ThumbnailURL         *string  `db:"thumbnail_url" json:"thumbnailUrl"`
 }
 
 type SubmissionFile struct {

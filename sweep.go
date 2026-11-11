@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	DISABLE_MAX_TIME = 10 * time.Minute
-	SWEEP_INTERVAL   = 120 * time.Second
+	DISABLE_MAX_TIME = 24 * time.Hour
+	SWEEP_INTERVAL   = 10 * time.Minute
 )
 
 var (

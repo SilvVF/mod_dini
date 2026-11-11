@@ -419,50 +419,20 @@ type CategoryListResponseItem struct {
 }
 
 type CategoryRecord struct {
-	IDRow          int      `json:"_idRow,omitempty"`
-	SModelName     string   `json:"_sModelName,omitempty"`
-	SSingularTitle string   `json:"_sSingularTitle,omitempty"`
-	SIconClasses   string   `json:"_sIconClasses,omitempty"`
-	SName          string   `json:"_sName,omitempty"`
-	SProfileURL    string   `json:"_sProfileUrl,omitempty"`
-	TsDateAdded    int      `json:"_tsDateAdded,omitempty"`
-	TsDateModified int      `json:"_tsDateModified,omitempty"`
-	BHasFiles      bool     `json:"_bHasFiles,omitempty"`
-	ATags          []string `json:"_aTags,omitempty"`
-	APreviewMedia  struct {
-		AImages []struct {
-			SType    string `json:"_sType,omitempty"`
-			SBaseURL string `json:"_sBaseUrl,omitempty"`
-			SFile    string `json:"_sFile,omitempty"`
-			SFile220 string `json:"_sFile220,omitempty"`
-			HFile220 int    `json:"_hFile220,omitempty"`
-			WFile220 int    `json:"_wFile220,omitempty"`
-			SFile530 string `json:"_sFile530,omitempty"`
-			HFile530 int    `json:"_hFile530,omitempty"`
-			WFile530 int    `json:"_wFile530,omitempty"`
-			SFile100 string `json:"_sFile100,omitempty"`
-			HFile100 int    `json:"_hFile100,omitempty"`
-			WFile100 int    `json:"_wFile100,omitempty"`
-		} `json:"_aImages,omitempty"`
-	} `json:"_aPreviewMedia,omitempty"`
-	ASubmitter struct {
-		IDRow                 int    `json:"_idRow,omitempty"`
-		SName                 string `json:"_sName,omitempty"`
-		BIsOnline             bool   `json:"_bIsOnline,omitempty"`
-		BHasRipe              bool   `json:"_bHasRipe,omitempty"`
-		SProfileURL           string `json:"_sProfileUrl,omitempty"`
-		SAvatarURL            string `json:"_sAvatarUrl,omitempty"`
-		SHdAvatarUrl          string `json:"_sHdAvatarUrl,omitempty"`
-		SUpicUrl              string `json:"_sUpicUrl,omitempty"`
-		SSubjectShaperCssCode string `json:"_sSubjectShaperCssCode,omitempty"`
-	} `json:"_aSubmitter,omitempty"`
-	AGame struct {
-		IDRow       int    `json:"_idRow,omitempty"`
-		SName       string `json:"_sName,omitempty"`
-		SProfileURL string `json:"_sProfileUrl,omitempty"`
-		SIconURL    string `json:"_sIconUrl,omitempty"`
-	} `json:"_aGame,omitempty"`
-	ARootCategory struct {
+	IDRow          int           `json:"_idRow,omitempty"`
+	SModelName     string        `json:"_sModelName,omitempty"`
+	SSingularTitle string        `json:"_sSingularTitle,omitempty"`
+	SIconClasses   string        `json:"_sIconClasses,omitempty"`
+	SName          string        `json:"_sName,omitempty"`
+	SProfileURL    string        `json:"_sProfileUrl,omitempty"`
+	TsDateAdded    int           `json:"_tsDateAdded,omitempty"`
+	TsDateModified int           `json:"_tsDateModified,omitempty"`
+	BHasFiles      bool          `json:"_bHasFiles,omitempty"`
+	ATags          []string      `json:"_aTags,omitempty"`
+	APreviewMedia  APreviewMedia `json:"_aPreviewMedia,omitempty"`
+	ASubmitter     ASubmitter    `json:"_aSubmitter,omitempty"`
+	AGame          AGame         `json:"_aGame,omitempty"`
+	ARootCategory  struct {
 		SName       string `json:"_sName,omitempty"`
 		SProfileURL string `json:"_sProfileUrl,omitempty"`
 		SIconURL    string `json:"_sIconUrl,omitempty"`
