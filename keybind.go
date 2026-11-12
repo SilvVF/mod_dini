@@ -204,10 +204,11 @@ func ParseKeyind(
 		persistVar := ""
 		persistValuesStr := ""
 
-		for _, c := range s.Keys() {
-			if _, ok := options[c.Name()]; ok {
-				persistVar = c.Name()
-				persistValuesStr = c.Value()
+		for _, row := range s.Keys() {
+			if _, ok := options[row.Name()]; ok {
+				persistVar = row.Name()
+				persistValuesStr = row.Value()
+				break
 			}
 		}
 
@@ -216,9 +217,16 @@ func ParseKeyind(
 			persistValues[i] = strings.TrimSpace(v)
 		}
 
+		key := ""
+		if s.HasKey("key") {
+			key = s.Key("key").Value()
+		} else {
+			key = s.Key("Key").Value()
+		}
+
 		keybinds = append(keybinds, ModKeyBind{
 			Section:       s.Name(),
-			Key:           s.Key("key").Value(),
+			Key:           key,
 			ActionType:    s.Key("type").Value(),
 			PersistVar:    persistVar,
 			PersistValues: persistValues,

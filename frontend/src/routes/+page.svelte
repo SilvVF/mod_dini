@@ -4,11 +4,12 @@
   import * as Sidebar from "#lib/components/ui/sidebar/index.ts";
   import { ChevronDown } from "@lucide/svelte";
   import { Collapsible } from "bits-ui";
-  import type {
-    CharacterFolder,
-    ModSaved,
-    Pack,
-    Subfolder,
+  import {
+    StorageState,
+    type CharacterFolder,
+    type ModSaved,
+    type Pack,
+    type Subfolder,
   } from "#lib/bindings/changeme/models.ts";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import ModCard from "#lib/components/dini/ModCard.svelte";
@@ -20,6 +21,8 @@
   } from "#lib/contexts/group-mods.ts";
   import LibraryConfig from "#lib/components/dini/LibraryConfig.svelte";
   import type { GameConfig } from "#lib/components/dini/types.ts";
+  import { ModsLoaded } from "#lib/bindings/events/index.ts";
+  import { formatSize } from "#lib/components/dini/utils.ts";
 
   let { data }: PageProps = $props();
 
@@ -55,9 +58,12 @@
 
   const characters = $derived(Object.entries(data.characters));
   const subfolders = $derived(Object.entries(data.subfolders));
-
+  const toolId = "zzmi";
+  const mods = $derived(
+    Object.values(saved.mods).filter((m) => m.toolId === toolId),
+  );
   const groupedMods = $derived(
-    groupModsByFolders(saved.mods, data.rootFolder, data.characters, data.subfolders),
+    groupModsByFolders(mods, data.rootFolder, data.characters, data.subfolders),
   );
 
   const selectedGroups = $derived(
@@ -76,11 +82,33 @@
     selectedModId ? saved.mods[selectedModId] : undefined,
   );
 
+  const enabled = $derived(
+    mods.filter((m) =>
+      m.packages?.some((p) => p.enabled && m.toolId === toolId),
+    ).length,
+  );
+  const totalSize = $derived.by(() => {
+    let total = 0;
+
+    for (const mod of mods) {
+      for (const pack of mod.packages ?? []) {
+        if (pack.storage === StorageState.StorageCold) {
+          total += pack.archiveSize;
+        } else {
+          total += pack.manifest.size;
+        }
+      }
+    }
+
+    return total;
+  });
+
   let config = $derived<GameConfig>({
     game: {
       id: "zzmi",
       name: "Zenless Zone Zero",
-      image: "https://images.gamebanana.com/img/Webpage/Game/Profile/Background/66868c3874664.jpg",
+      image:
+        "https://images.gamebanana.com/img/Webpage/Game/Profile/Background/66868c3874664.jpg",
     },
     preset: {
       id: "p1",
@@ -89,9 +117,9 @@
     },
     mods: groupedMods.flatMap((group) => group.items),
     stats: {
-      loaded: 4,
-      total: 6,
-      sizeOnDisk: "1.3 GB",
+      loaded: enabled,
+      total: mods.length,
+      sizeOnDisk: formatSize(totalSize),
       overlaps: 0,
       updates: 0,
     },

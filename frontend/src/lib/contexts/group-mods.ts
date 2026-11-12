@@ -60,14 +60,14 @@ export type SelectedItem =
   | { type: "character"; value: CharacterFolder };
 
 export function groupModsByFolders(
-  mods: Record<string, ModSaved>,
+  mods: ModSaved[],
   root: RootFolder,
   characters: Record<string, CharacterFolder>,
   subfolders: Record<string, Subfolder>,
 ): ModGroup[] {
   const modsByCategory = new Map<string, ModSaved[]>();
 
-  for (const mod of Object.values(mods)) {
+  for (const mod of mods) {
     const key = `${mod.submission.provider}:${mod.submission.category}`;
     const items = modsByCategory.get(key);
 

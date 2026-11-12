@@ -1,41 +1,37 @@
 <script lang="ts">
-    import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
-    import type { PageProps } from "../$types";
-    import Keybinds from "./Keybinds.svelte";
+  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
+  import type { PageProps } from "./$types";
+  import Keybinds from "./Keybinds.svelte";
 
-    let { data }: PageProps = $props();
+  let { data }: PageProps = $props();
 
-    let saved = getSavedModsContext();
+  let saved = getSavedModsContext();
 
-    const toolId = "zzmi";
-    const names = $derived(
-        Object.fromEntries(
-            Object.entries(data.characters).flatMap(([_, folder]) =>
-                Object.entries(folder.sources ?? {}).map(
-                    ([provider, categoryId]) => [
-                        `${provider}:${categoryId}`,
-                        folder.name,
-                    ],
-                ),
-            ),
-        ),
+  const toolId = "zzmi";
+  const names = $derived(
+    Object.fromEntries(
+      Object.entries(data.characters).flatMap(([_, folder]) =>
+        Object.entries(folder.sources ?? {}).map(([provider, categoryId]) => [
+          `${provider}:${categoryId}`,
+          folder.name,
+        ]),
+      ),
+    ),
+  );
+
+  const presetsForEnabledMods = $derived.by(() => {
+    const enabledMods = Object.values(saved.mods).filter(
+      (mod) => mod.packages?.some((p) => p.enabled) && mod.toolId === toolId,
     );
 
-    const groupedPresets = $derived.by(() =>
-        Object.entries(data.keybinds).flatMap(([modId, presets]) => {
-            const mod = saved.mods[modId];
-            const categoryKey = `${mod.submission.provider}:${mod.submission.category}`;
-            return [
-                {
-                    mod,
-                    name: names[categoryKey] ?? "",
-                    presets: Object.values(presets),
-                },
-            ];
-        }),
-    );
+    return enabledMods.map((mod) => ({
+      mod,
+      name: names[`${mod.submission.provider}:${mod.submission.category}`],
+      presets: Object.values(data.keybinds[mod.id]),
+    }));
+  });
 </script>
 
 <div>
-    <Keybinds data={groupedPresets} toolId="zzmi" />
+  <Keybinds data={presetsForEnabledMods} toolId="zzmi" />
 </div>

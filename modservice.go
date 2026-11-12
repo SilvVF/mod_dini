@@ -102,13 +102,13 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 	ms.sweeper = NewSweeper(ms)
 	go ms.sweeper.Run()
 
-	res, err := ms.Initial()
-	if err != nil {
-		return err
-	}
-	for _, m := range res {
-		ms.ks.SaveDefault(m.ID)
-	}
+	// res, err := ms.Initial()
+	// if err != nil {
+	// 	return err
+	// }
+	// for _, m := range res {
+	// 	ms.ks.SaveDefault(m.ID)
+	// }
 
 	return nil
 }

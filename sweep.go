@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -235,7 +236,9 @@ func (s *Sweeper) compressPack(
 	ctx context.Context,
 ) error {
 	format := archives.CompressedArchive{
-		Archival: archives.Zip{},
+		Archival: archives.Zip{
+			Compression: zip.Deflate,
+		},
 	}
 
 	toolDir, err := GetSetting[string](
