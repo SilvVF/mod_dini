@@ -137,6 +137,25 @@ export interface ManifestEntry {
     "hash": string;
 }
 
+export interface ModKeyBind {
+    "section": string;
+    "key": string;
+    "actionType": string;
+    "persistVar": string;
+    "persistValue": string;
+    "persistValues": string[] | null;
+}
+
+export interface ModKeyBindPreset {
+    "id": string;
+    "modId": string;
+    "toolId": string;
+    "name": string;
+    "values": ModKeyBind[] | null;
+    "createdAt": string;
+    "updatedAt": string;
+}
+
 export interface ModSaved {
     "id": string;
     "toolId": string;

@@ -24,6 +24,8 @@ export type {
     FolderConfig,
     ListParams,
     ManifestEntry,
+    ModKeyBind,
+    ModKeyBindPreset,
     ModSaved,
     Option,
     Pack,

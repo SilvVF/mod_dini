@@ -18,14 +18,16 @@ import (
 var ErrPackNotCold = errors.New("pack is not cold")
 
 type ModService struct {
-	app       *application.App
-	providers ProviderRegistry
-	gbApi     GbApi
-	fs        *FolderStore
-	db        *bolt.DB
-	sweeper   *Sweeper
-	settings  *SettingsStore
-	modLocks  sync.Map
+	app            *application.App
+	keybindsWindow *application.WebviewWindow
+	providers      ProviderRegistry
+	gbApi          GbApi
+	ks             *KeybindStore
+	fs             *FolderStore
+	db             *bolt.DB
+	sweeper        *Sweeper
+	settings       *SettingsStore
+	modLocks       sync.Map
 }
 
 func (ms *ModService) lockMod(modID string) (unlock func()) {
@@ -35,11 +37,33 @@ func (ms *ModService) lockMod(modID string) (unlock func()) {
 	return mu.Unlock
 }
 
+func (ms *ModService) OpenKeybindsWindow() {
+
+	if ms.keybindsWindow != nil {
+		ms.keybindsWindow.Close()
+	}
+
+	ms.keybindsWindow = ms.app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:          "keybinds-window",
+		Width:         420,
+		Height:        600,
+		DisableResize: true,
+		AlwaysOnTop:   true,
+		URL:           "/keybinds",
+		Windows:       application.WindowsWindow{},
+	})
+}
+
 func (ms *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	ms.providers = ProviderRegistry{
 		"gamebanana": NewGameBanana(&GbApi{}),
 		"huihui":     &HuiHuiProvider{},
 	}
+	ms.ks = &KeybindStore{
+		db: ms.db,
+		ms: ms,
+	}
+
 	err := ms.settings.Sync(ms.DefaultSettings())
 	if err != nil {
 		panic(err)
@@ -78,6 +102,14 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 	ms.sweeper = NewSweeper(ms)
 	go ms.sweeper.Run()
 
+	res, err := ms.Initial()
+	if err != nil {
+		return err
+	}
+	for _, m := range res {
+		ms.ks.SaveDefault(m.ID)
+	}
+
 	return nil
 }
 
@@ -88,6 +120,10 @@ func (ms *ModService) FolderConfig(toolId string) (RootFolder, error) {
 		log.Println("folder get ", err)
 	}
 	return f, err
+}
+
+func (ms *ModService) GetKeyBinds() (map[string]map[string]ModKeyBindPreset, error) {
+	return ms.ks.GetAll()
 }
 
 func (ms *ModService) Settings() ([]Setting, error) {

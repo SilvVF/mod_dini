@@ -33,6 +33,19 @@ func (ms *ModService) updateMod(modId string, update func(mod *ModSaved) error) 
 	return mod, nil
 }
 
+func getModTx(tx *bolt.Tx, modId string) (ModSaved, error) {
+	var mod ModSaved
+
+	bucket := tx.Bucket(DL_BUCKET)
+	data := bucket.Get([]byte(modId))
+
+	if err := json.Unmarshal(data, &mod); err != nil {
+		return mod, err
+	}
+
+	return mod, nil
+}
+
 func updateModTx(tx *bolt.Tx, modId string, update func(mod *ModSaved) error) (ModSaved, error) {
 	var mod ModSaved
 

@@ -69,8 +69,11 @@ func (ms *ModService) DownloadMod(mod ModSaved) error {
 		"[mod] download done mod=%s ok=%d skipped=%d failed=%d took=%s",
 		mod.ID, downloaded, skipped, len(errs), time.Since(start).Round(time.Millisecond),
 	)
+	if err = errors.Join(errs...); err != nil {
+		return err
+	}
 
-	return errors.Join(errs...)
+	return ms.ks.SaveDefault(mod.ID)
 }
 
 func (m ModSaved) GetPackage(id string) (Pack, int, bool) {

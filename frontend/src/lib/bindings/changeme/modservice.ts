@@ -33,6 +33,10 @@ export function FolderConfig(toolId: string): $CancellablePromise<$models.RootFo
     return $Call.ByID(697513691, toolId);
 }
 
+export function GetKeyBinds(): $CancellablePromise<{ [_ in string]?: { [_ in string]?: $models.ModKeyBindPreset } | null } | null> {
+    return $Call.ByID(167642374);
+}
+
 export function Initial(): $CancellablePromise<{ [_ in string]?: $models.ModSaved } | null> {
     return $Call.ByID(2814493079);
 }
@@ -43,6 +47,10 @@ export function List(p: $models.ListParams): $CancellablePromise<$models.Submiss
 
 export function OnSettingAction(key: string, action: string): $CancellablePromise<void> {
     return $Call.ByID(1334715178, key, action);
+}
+
+export function OpenKeybindsWindow(): $CancellablePromise<void> {
+    return $Call.ByID(1088636220);
 }
 
 export function Page(providerId: string, pageId: string): $CancellablePromise<$models.SubmissionPage> {
