@@ -41,6 +41,7 @@
   import { compact } from "#lib/ts-ext.ts";
   import { page } from "$app/state";
   import Gallery from "../../../../lib/components/dini/Gallery.svelte";
+  import Spinner from "#lib/components/ui/spinner/spinner.svelte";
 
   let { data }: PageProps = $props();
 
@@ -83,7 +84,11 @@
           archiveSize: -1,
           disabledAt: -1,
           extractedSize: -1,
-          manifest: { relPath: "", size: file.size, hash: file.md5Checksum },
+          manifest: {
+            relPath: "",
+            size: file.size,
+            hash: file.md5Checksum,
+          },
         },
         status: statusOf(file, installed),
         enabled: installed !== undefined,
@@ -91,18 +96,22 @@
     });
   });
 
-  const installedPacks = $derived(localMod?.packages ?? []);
+  const installedPacks = $derived(
+    localMod?.packages?.filter((p) => p.storage !== StorageState.StorageNone) ??
+      [],
+  );
   const isInstalled = $derived(installedPacks.length > 0);
   const enabledCount = $derived(installedPacks.filter((p) => p.enabled).length);
 
-  // ---- actions ----------------------------------------------------------
+  const installing = $derived(
+    localMod?.packages?.some((p) => p.state !== InstallState.InstallReady),
+  );
 
   let dialogOpen = $state(false);
   let tab = $state("overview");
-  let favorited = $state(false); // TODO: persist
 
   function handleConfirmDownload(packs: PackageView[]) {
-    const selected = packs.filter((p) => p.enabled).map((p) => p.pack);
+    const selected = packs.map((p) => p.pack);
     saved.add(submission, files, selected);
   }
 
@@ -124,8 +133,7 @@
   }
 
   function deleteMod() {
-    // NOTE: remove() takes a number while mod ids are strings; see notes below
-    saved.remove(Number(submission.submissionId));
+    saved.remove(submission.submissionId);
   }
 
   const isBusy = (p: Pack) =>
@@ -141,7 +149,6 @@
   const ago = (ts: number) =>
     ts ? formatDistanceToNow(toDate(ts), { addSuffix: true }) : "-";
 
-  // sum of per-file counts; replace if the provider gives a mod-level total
   const downloads = $derived(files.reduce((n, f) => n + f.downloadCount, 0));
 
   const authorUrl = $derived(
@@ -163,10 +170,19 @@
     <div class={tile}><Icon class="size-4" /></div>
     <div class="min-w-0">
       <div class={label}>{name}</div>
-      <div class="truncate font-mono font-semibold" title={value}>{value}</div>
+      <div class="truncate font-mono font-semibold" title={value}>
+        {value}
+      </div>
     </div>
   </div>
 {/snippet}
+
+<FileSelectDialog
+  bind:open={dialogOpen}
+  onConfirm={handleConfirmDownload}
+  onCancel={() => (dialogOpen = false)}
+  packageView={packages}
+/>
 
 <div
   class="mx-auto flex h-full min-h-0 w-full flex-col gap-6 overflow-y-auto p-6"
@@ -206,7 +222,9 @@
         class="absolute inset-x-6 bottom-6 flex items-end justify-between gap-4"
       >
         <div class="min-w-0">
-          <h1 class="text-4xl font-bold tracking-tight">{submission.name}</h1>
+          <h1 class="text-4xl font-bold tracking-tight">
+            {submission.name}
+          </h1>
           <p class="mt-1 text-lg text-muted-foreground">
             {submission.category}
           </p>
@@ -261,7 +279,9 @@
           </Avatar>
           <div class="min-w-0">
             <div class={label}>Author</div>
-            <div class="truncate font-semibold">{submission.author}</div>
+            <div class="truncate font-semibold">
+              {submission.author}
+            </div>
           </div>
           {#if authorUrl}
             <a
@@ -316,15 +336,6 @@
       </a>
 
       <div class="flex flex-wrap items-center gap-3">
-        <Button
-          variant="outline"
-          class="gap-2"
-          onclick={() => (favorited = !favorited)}
-        >
-          <Star class="size-4 {favorited ? 'fill-current' : ''}" />
-          Favorite
-        </Button>
-
         {#if isInstalled}
           <Button variant="outline" class="gap-2" onclick={reinstall}>
             <RotateCw class="size-4" />
@@ -343,12 +354,14 @@
             Delete Mod
           </Button>
         {:else}
-          <FileSelectDialog
-            bind:open={dialogOpen}
-            onConfirm={handleConfirmDownload}
-            onCancel={() => (dialogOpen = false)}
-            packageView={packages}
-          />
+          {#if installing}
+            <Button disabled size="sm">
+              <Spinner data-icon="inline-start" />
+              Installing...
+            </Button>
+          {:else}
+            <Button onclick={() => (dialogOpen = true)}>Download Mod</Button>
+          {/if}
         {/if}
       </div>
     </div>
@@ -398,7 +411,9 @@
             pkg.status === "extracting"}
           <div class="flex items-center gap-4 px-6 py-4">
             <div class="min-w-0 flex-1 space-y-0.5">
-              <div class="break-all font-semibold">{pkg.file.fileName}</div>
+              <div class="break-all font-semibold">
+                {pkg.file.fileName}
+              </div>
               {#if pkg.file.description}
                 <div class="text-sm text-muted-foreground">
                   {pkg.file.description}

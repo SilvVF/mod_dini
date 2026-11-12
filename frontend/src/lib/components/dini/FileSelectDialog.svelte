@@ -60,6 +60,7 @@
     }
 
     function confirm() {
+        console.log(selected)
         onConfirm(selected);
         open = false;
     }
@@ -91,12 +92,6 @@
 </script>
 
 <Dialog.Root bind:open>
-    <Dialog.Trigger>
-        {#snippet child({ props })}
-            <Button {...props}>Download Mod</Button>
-        {/snippet}
-    </Dialog.Trigger>
-
     <Dialog.Content class="max-w-xl gap-6 p-8">
         {#if packageView.length > 0}
             <Dialog.Header class="gap-0 text-left">

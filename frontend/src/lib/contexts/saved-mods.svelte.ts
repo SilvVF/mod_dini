@@ -17,7 +17,7 @@ export interface SavedMods {
   setAsEnabledPkgs(id: string, ids: string[]): void;
   enablePkg(modId: string, id: string): void;
   toggleAllPkgs(id: string): void;
-  remove(id: number): void;
+  remove(modID: string): void;
 }
 
 const SAVED_MODS_KEY = Symbol("savedMods");
@@ -31,7 +31,7 @@ export function setSavedModsContext(initial: () => Record<string, ModSaved>) {
         console.log(e);
       });
     },
-    remove(id) {},
+    remove(modID) {},
     toggleAllPkgs(id) {
       const mod = this.mods[id];
       if (!mod) return;
