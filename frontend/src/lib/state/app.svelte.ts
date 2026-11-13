@@ -1,4 +1,5 @@
 import { Events } from "@wailsio/runtime";
+import { ModService } from "../bindings/changeme";
 
 export const appState = $state({
   activeTool: "zzmi",
@@ -29,15 +30,11 @@ export const tools = [
   },
 ];
 
-export function setToolFromEvent(toolId: string) {
-  if (validIds.includes(toolId)) appState.activeTool = toolId;
-}
-
 export function setActiveTool(toolId: string) {
-  if (validIds.includes(toolId)) appState.activeTool = toolId;
-  Events.Emit("active-tool-change", toolId).catch(() => {
-    console.log("failed to set tool", toolId);
-  });
+  if (validIds.includes(toolId)) {
+    appState.activeTool = toolId;
+    ModService.SetActiveTool(toolId);
+  }
 }
 
 export function toolName(toolId: string): string {
@@ -55,15 +52,17 @@ export function toolName(toolId: string): string {
 }
 
 export function getRouteForProvider(provider: string): string | undefined {
-    const conf = tools.find(t => t.id === appState.activeTool)!
-    if (conf.providers.some(p => p === provider)) {
-        switch(provider) {
-            case "huihui": return `/source/huihui/${currentHuiHuiCategory()}`
-            case "gamebanana": return `/source/gamebanana/${currentGamebannaCategory()}`
-        }
+  const conf = tools.find((t) => t.id === appState.activeTool)!;
+  if (conf.providers.some((p) => p === provider)) {
+    switch (provider) {
+      case "huihui":
+        return `/source/huihui/${currentHuiHuiCategory()}`;
+      case "gamebanana":
+        return `/source/gamebanana/${currentGamebannaCategory()}`;
     }
+  }
 
-    return undefined
+  return undefined;
 }
 
 export function currentHuiHuiCategory() {

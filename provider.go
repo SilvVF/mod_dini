@@ -25,6 +25,7 @@ type SubmissionList struct {
 }
 
 type SubmissionPage struct {
+	ResolvedToolId  *string          `json:"resolvedToolId,omitempty"`
 	Submission      Submission       `json:"submission"`
 	SubmissionFiles []SubmissionFile `json:"submissionFiles"`
 }

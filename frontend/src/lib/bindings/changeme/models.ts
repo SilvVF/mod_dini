@@ -408,6 +408,7 @@ export interface SubmissionList {
 }
 
 export interface SubmissionPage {
+    "resolvedToolId"?: string | null;
     "submission": Submission;
     "submissionFiles": SubmissionFile[] | null;
 }

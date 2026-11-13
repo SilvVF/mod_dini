@@ -7,7 +7,10 @@
   import { Globe, Globe2, Keyboard, Settings } from "@lucide/svelte";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { SvelteQueryDevtools } from "@tanstack/svelte-query-devtools";
-  import { setSettingsContext } from "#lib/contexts/settings.svelte.ts";
+  import {
+    getSettingsContext,
+    setSettingsContext,
+  } from "#lib/contexts/settings.svelte.ts";
   import * as Dialog from "#lib/components/ui/dialog/index.ts";
   import { page } from "$app/state";
   import { Category } from "#lib/bindings/changeme/models.ts";
@@ -19,12 +22,9 @@
     appState,
     getRouteForProvider,
     setActiveTool,
-    setToolFromEvent,
     tools,
   } from "#lib/state/app.svelte.ts";
-  import { onMount } from "svelte";
-  import { Events } from "@wailsio/runtime";
-
+  import { untrack } from "svelte";
   let { children, data }: LayoutProps = $props();
 
   const queryClient = new QueryClient();
@@ -32,19 +32,20 @@
   setSavedModsContext(() => data.mods);
   setSettingsContext(() => data.settings);
 
-  onMount(() => {
-    const unsubscribe = Events.On("active-tool-change", ({ data }) => {
-      setToolFromEvent(data);
-    });
+  const settings = getSettingsContext();
+  $effect(() => {
+    const active = settings.get("tool.active");
 
-    return () => unsubscribe();
+    untrack(() => {
+      appState.activeTool = active?.value ?? "zzmi";
+    });
   });
 
   const activeToolConfig = $derived(
     tools.find((t) => t.id === appState.activeTool)!,
   );
   const category = $derived(page.state.settings?.category);
-  const topBarHidden = $derived(page.route.id !== "/")
+  const topBarHidden = $derived(page.route.id === "/keybinds");
 
   function openKeybindsWindow() {
     ModService.OpenKeybindsWindow();
@@ -73,7 +74,7 @@
     <header
       class={cn(
         "flex h-[10vh] shrink-0 items-center justify-start border-b px-4",
-        topBarHidden  ? "hidden" : "",
+        topBarHidden ? "hidden" : "",
       )}
     >
       <a

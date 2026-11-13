@@ -1,15 +1,33 @@
 <script lang="ts">
-  import { formatDistanceToNow, sub, subMinutes } from "date-fns";
+  import { formatDistanceToNow } from "date-fns";
   import type { PageProps } from "./$types";
+  import { page } from "$app/state";
+
   import {
     InstallState,
     StorageState,
     type Pack,
   } from "#lib/bindings/changeme/index.ts";
-  import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
   import { statusOf, type PackageView } from "#lib/contexts/group-mods.ts";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
+  import { toolName, tools } from "#lib/state/app.svelte.ts";
+  import { compact } from "#lib/ts-ext.ts";
+
+  import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
+  import Gallery from "#lib/components/dini/Gallery.svelte";
+  import { formatSize } from "#lib/components/dini/utils.ts";
+  import { Avatar, AvatarImage } from "#lib/components/ui/avatar/index.ts";
+  import AvatarFallback from "#lib/components/ui/avatar/avatar-fallback.svelte";
+  import { Badge } from "#lib/components/ui/badge/index.ts";
+  import { Button } from "#lib/components/ui/button/index.ts";
   import Progress from "#lib/components/ui/progress/progress.svelte";
+  import * as Select from "#lib/components/ui/select/index.ts";
+  import Spinner from "#lib/components/ui/spinner/spinner.svelte";
+  import { Switch } from "#lib/components/ui/switch/index.ts";
+  import { Tabs } from "#lib/components/ui/tabs/index.ts";
+  import TabsContent from "#lib/components/ui/tabs/tabs-content.svelte";
+  import TabsList from "#lib/components/ui/tabs/tabs-list.svelte";
+  import TabsTrigger from "#lib/components/ui/tabs/tabs-trigger.svelte";
 
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import Box from "@lucide/svelte/icons/box";
@@ -26,34 +44,15 @@
   import Package from "@lucide/svelte/icons/package";
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
   import Settings from "@lucide/svelte/icons/settings";
-  import Star from "@lucide/svelte/icons/star";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import { Button } from "#lib/components/ui/button/index.ts";
-  import { Badge } from "#lib/components/ui/badge/index.ts";
-  import { Avatar, AvatarImage } from "#lib/components/ui/avatar/index.ts";
-  import AvatarFallback from "#lib/components/ui/avatar/avatar-fallback.svelte";
-  import { Switch } from "#lib/components/ui/switch/index.ts";
-  import { Tabs } from "#lib/components/ui/tabs/index.ts";
-  import TabsList from "#lib/components/ui/tabs/tabs-list.svelte";
-  import TabsTrigger from "#lib/components/ui/tabs/tabs-trigger.svelte";
-  import TabsContent from "#lib/components/ui/tabs/tabs-content.svelte";
-  import { formatSize } from "#lib/components/dini/utils.ts";
-  import { compact } from "#lib/ts-ext.ts";
-  import { page } from "$app/state";
-  import Gallery from "../../../../lib/components/dini/Gallery.svelte";
-  import Spinner from "#lib/components/ui/spinner/spinner.svelte";
-  import { appState } from "#lib/state/app.svelte.ts";
+  import Wrench from "@lucide/svelte/icons/wrench";
 
   let { data }: PageProps = $props();
+  const saved = getSavedModsContext();
 
   const submission = $derived(data.submission);
   const files = $derived(data.files);
 
-  const characters = $derived(
-    compact(data.rootFolder[appState.activeTool].characters.characters ?? {}),
-  );
-
-  const saved = getSavedModsContext();
   const localMod = $derived(
     Object.values(saved.mods).find(
       (v) =>
@@ -61,9 +60,15 @@
         v.submission.submissionId === submission?.submissionId,
     ),
   );
+  // The tool this mod installs to. A saved mod is locked to the tool it was installed
+  // under; otherwise it's what the backend resolved from the category, and the user can
+  let toolId = $derived(localMod?.toolId ?? data.resolvedToolId ?? undefined);
+  const needsTool = $derived(!localMod && !toolId);
 
-  const dlProgress = $derived(
-    localMod ? saved.dlProgress[localMod.id] : undefined,
+  const characters = $derived(
+    compact(
+      toolId ? (data.rootFolder[toolId]?.characters.characters ?? {}) : {},
+    ),
   );
 
   const packages = $derived.by<PackageView[]>(() => {
@@ -85,14 +90,10 @@
           archiveSize: -1,
           disabledAt: -1,
           extractedSize: -1,
-          manifest: {
-            relPath: "",
-            size: file.size,
-            hash: file.md5Checksum,
-          },
+          manifest: { relPath: "", size: file.size, hash: file.md5Checksum },
         },
         status: statusOf(file, installed),
-        enabled: installed !== undefined,
+        enabled: installed !== undefined, // "selected" for the dialog; real state is pack.enabled
       };
     });
   });
@@ -104,19 +105,42 @@
   const isInstalled = $derived(installedPacks.length > 0);
   const enabledCount = $derived(installedPacks.filter((p) => p.enabled).length);
 
+  const IN_PROGRESS = [
+    InstallState.InstallQueued,
+    InstallState.InstallDownloading,
+    InstallState.InstallExtracting,
+  ];
   const installing = $derived(
-    localMod?.packages?.some((p) => p.state !== InstallState.InstallReady),
+    localMod?.packages?.some((p) => IN_PROGRESS.includes(p.state)) ?? false,
+  );
+
+  const dlProgress = $derived(
+    localMod ? saved.dlProgress[localMod.id] : undefined,
   );
 
   let dialogOpen = $state(false);
   let tab = $state("overview");
 
+  const tabs = [
+    { value: "overview", label: "Overview", icon: Info },
+    { value: "3d", label: "3D", icon: Box },
+    { value: "changelog", label: "Changelog", icon: History },
+    { value: "comments", label: "Comments", icon: MessageCircle },
+    { value: "files", label: "Files", icon: Files },
+  ];
+  const comingSoon = ["3d", "changelog", "comments"];
+
   function handleConfirmDownload(packs: PackageView[]) {
-    const selected = packs.map((p) => p.pack);
-    saved.add(submission, files, selected);
+    if (!toolId) return;
+    saved.add(
+      submission,
+      files,
+      packs.map((p) => p.pack),
+    );
   }
 
   function reinstall() {
+    if (!localMod) return;
     saved.add(submission, files, installedPacks);
   }
 
@@ -146,9 +170,17 @@
       ? (dlProgress.progress / dlProgress.total) * 100
       : 0;
 
+  // unix seconds or milliseconds
   const toDate = (ts: number) => new Date(ts < 1e12 ? ts * 1000 : ts);
   const ago = (ts: number) =>
     ts ? formatDistanceToNow(toDate(ts), { addSuffix: true }) : "-";
+
+  const initials = (s: string) => s.slice(0, 2).toUpperCase();
+
+  const providerNames: Record<string, string> = { gamebanana: "GameBanana" };
+  const providerName = $derived(
+    providerNames[submission.provider] ?? submission.provider,
+  );
 
   const downloads = $derived(files.reduce((n, f) => n + f.downloadCount, 0));
 
@@ -158,31 +190,178 @@
       : "",
   );
 
-  const initials = (s: string) => s.slice(0, 2).toUpperCase();
-
   const card = "flex items-center gap-4 rounded-xl border bg-muted/30 p-4";
   const tile =
     "flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground";
   const label = "text-xs uppercase tracking-wider text-muted-foreground";
 </script>
 
+<!-- ---- snippets ---------------------------------------------------------- -->
+
 {#snippet stat(Icon: typeof Download, name: string, value: string)}
   <div class={card}>
     <div class={tile}><Icon class="size-4" /></div>
     <div class="min-w-0">
       <div class={label}>{name}</div>
-      <div class="truncate font-mono font-semibold" title={value}>
-        {value}
-      </div>
+      <div class="truncate font-mono font-semibold" title={value}>{value}</div>
     </div>
   </div>
 {/snippet}
 
+{#snippet heroCard()}
+  <div class={card}>
+    <Avatar class="size-10">
+      {#if submission.hero && characters[submission.hero]}
+        <AvatarImage
+          src={characters[submission.hero].icon}
+          alt={submission.hero}
+        />
+      {/if}
+      <AvatarFallback>{initials(submission.hero ?? "?")}</AvatarFallback>
+    </Avatar>
+    <div class="min-w-0">
+      <div class="flex items-center gap-2">
+        <span class={label}>Hero</span>
+        {#if submission.hero}
+          <Badge variant="outline" class="h-5 px-1.5 text-[10px]">API</Badge>
+        {/if}
+      </div>
+      <div class="truncate font-semibold">{submission.hero ?? "Unknown"}</div>
+    </div>
+    <!-- TODO: hero override -->
+    <Button variant="ghost" size="icon" class="ml-auto size-8">
+      <Settings class="size-4" />
+    </Button>
+  </div>
+{/snippet}
+
+{#snippet authorCard()}
+  <div class={card}>
+    <Avatar class="size-10">
+      <AvatarFallback>{initials(submission.author)}</AvatarFallback>
+    </Avatar>
+    <div class="min-w-0">
+      <div class={label}>Author</div>
+      <div class="truncate font-semibold">{submission.author}</div>
+    </div>
+    {#if authorUrl}
+      <a
+        href={authorUrl}
+        target="_blank"
+        rel="noreferrer"
+        class="ml-auto inline-flex shrink-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        View profile
+        <ChevronRight class="size-4" />
+      </a>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet toolCard(span: string)}
+  <div class="{card} {span} {needsTool ? 'border-destructive/60' : ''}">
+    <div class={tile}><Wrench class="size-4" /></div>
+    <div class="min-w-0 flex-1">
+      <div class={label}>Install to</div>
+      {#if localMod || data.resolvedToolId}
+        <!-- installed: ModSaved.toolId is the truth, so it's read-only -->
+        <div class="truncate font-mono font-semibold">
+          {localMod
+            ? toolName(localMod.toolId)
+            : toolName(data.resolvedToolId ?? "")}
+        </div>
+      {:else}
+        <Select.Root
+          type="single"
+          value={toolId ?? ""}
+          onValueChange={(v) => (toolId = v)}
+        >
+          <Select.Trigger
+            class="h-7 w-full border-0 bg-transparent p-0 font-mono font-semibold shadow-none"
+          >
+            {toolId ? toolName(toolId) : "Select a tool"}
+          </Select.Trigger>
+          <Select.Content>
+            {#each tools as t (t.id)}
+              <Select.Item value={t.id} label={toolName(t.id)} />
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {/if}
+    </div>
+  </div>
+{/snippet}
+
+{#snippet fileRow(pkg: PackageView)}
+  {@const working =
+    pkg.status === "queued" ||
+    pkg.status === "downloading" ||
+    pkg.status === "extracting"}
+  <div class="flex items-center gap-4 px-6 py-4">
+    <div class="min-w-0 flex-1 space-y-0.5">
+      <div class="break-all font-semibold">{pkg.file.fileName}</div>
+      {#if pkg.file.description}
+        <div class="text-sm text-muted-foreground">{pkg.file.description}</div>
+      {/if}
+      <div class="flex gap-3 text-sm text-muted-foreground">
+        <span class="font-medium">{formatSize(pkg.file.size)}</span>
+        <span>Updated {ago(pkg.file.addedAt)}</span>
+        <span>{pkg.file.downloadCount.toLocaleString()} downloads</span>
+      </div>
+    </div>
+
+    {#if pkg.pack.storage === StorageState.StorageCold}
+      <Badge variant="outline">Compressed</Badge>
+    {/if}
+
+    {#if working}
+      <div class="w-40 space-y-1">
+        <Progress value={progressPct(pkg.pack)} />
+        <div class="text-xs capitalize text-muted-foreground">
+          {pkg.status}…
+        </div>
+      </div>
+    {:else if pkg.status === "available"}
+      <Button
+        size="sm"
+        variant="outline"
+        class="gap-2"
+        disabled={!toolId}
+        onclick={() => (dialogOpen = true)}
+      >
+        <Download class="size-4" />
+        Install
+      </Button>
+    {:else if pkg.status === "error"}
+      <Badge variant="destructive">Failed</Badge>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!toolId}
+        onclick={() => (dialogOpen = true)}
+      >
+        Retry
+      </Button>
+    {:else}
+      {#if pkg.status === "update"}
+        <Badge variant="outline">Update available</Badge>
+      {/if}
+      <Switch
+        checked={pkg.pack.enabled}
+        disabled={isBusy(pkg.pack)}
+        onCheckedChange={(on) => setPackEnabled(pkg.pack, on)}
+      />
+    {/if}
+  </div>
+{/snippet}
+
+<!-- ---- page -------------------------------------------------------------- -->
+
 <FileSelectDialog
   bind:open={dialogOpen}
+  packageView={packages}
   onConfirm={handleConfirmDownload}
   onCancel={() => (dialogOpen = false)}
-  packageView={packages}
 />
 
 <div
@@ -200,7 +379,7 @@
 
   <section class="rounded-2xl border bg-card">
     <!-- banner -->
-    <div class="relative h-80 bg-muted">
+    <div class="relative h-80 overflow-hidden rounded-t-2xl bg-muted">
       {#if submission.thumbnailUrl}
         <img
           src={submission.thumbnailUrl}
@@ -219,13 +398,12 @@
         <Hash class="size-3" />
         {submission.submissionId}
       </Badge>
+
       <div
         class="absolute inset-x-6 bottom-6 flex items-end justify-between gap-4"
       >
         <div class="min-w-0">
-          <h1 class="text-4xl font-bold tracking-tight">
-            {submission.name}
-          </h1>
+          <h1 class="text-4xl font-bold tracking-tight">{submission.name}</h1>
           <p class="mt-1 text-lg text-muted-foreground">
             {submission.category}
           </p>
@@ -245,74 +423,23 @@
     <div class="flex flex-col gap-4 p-8">
       <!-- hero / author / downloads / likes -->
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class={card}>
-          <Avatar class="size-10">
-            {#if submission.hero && characters[submission.hero]}
-              <AvatarImage
-                src={characters[submission.hero].icon}
-                alt={submission.hero}
-              />
-            {/if}
-            <AvatarFallback>{initials(submission.hero ?? "?")}</AvatarFallback>
-          </Avatar>
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <span class={label}>Hero</span>
-              {#if submission.hero}
-                <Badge variant="outline" class="h-5 px-1.5 text-[10px]">
-                  API
-                </Badge>
-              {/if}
-            </div>
-            <div class="truncate font-semibold">
-              {submission.hero ?? "Unknown"}
-            </div>
-          </div>
-          <!-- TODO: hero override -->
-          <Button variant="ghost" size="icon" class="ml-auto size-8">
-            <Settings class="size-4" />
-          </Button>
-        </div>
-
-        <div class={card}>
-          <Avatar class="size-10">
-            <AvatarFallback>{initials(submission.author)}</AvatarFallback>
-          </Avatar>
-          <div class="min-w-0">
-            <div class={label}>Author</div>
-            <div class="truncate font-semibold">
-              {submission.author}
-            </div>
-          </div>
-          {#if authorUrl}
-            <a
-              href={authorUrl}
-              target="_blank"
-              rel="noreferrer"
-              class="ml-auto inline-flex shrink-0 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-            >
-              View profile
-              <ChevronRight class="size-4" />
-            </a>
-          {/if}
-        </div>
-
+        {@render heroCard()}
+        {@render authorCard()}
         {@render stat(Download, "Downloads", downloads.toLocaleString())}
         {@render stat(Heart, "Likes", submission.likes.toLocaleString())}
       </div>
 
       <hr />
 
-      <!-- dates (+ installed files once the mod is saved) -->
-      <div
-        class="grid gap-4 sm:grid-cols-2 {isInstalled ? 'lg:grid-cols-3' : ''}"
-      >
+      <!-- dates / install target / installed files -->
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {@render stat(CalendarPlus, "Published", ago(submission.remoteAddedAt))}
         {@render stat(
           CalendarClock,
           "Last modified",
           ago(submission.remoteUpdatedAt),
         )}
+        {@render toolCard(isInstalled ? "" : "lg:col-span-2")}
         {#if isInstalled}
           {@render stat(
             Package,
@@ -333,7 +460,7 @@
         rel="noreferrer"
         class="font-semibold text-primary hover:underline"
       >
-        View Post on {page.params.provider}
+        View Post on {providerName}
       </a>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -354,15 +481,15 @@
             <Trash2 class="size-4" />
             Delete Mod
           </Button>
+        {:else if installing}
+          <Button disabled size="sm">
+            <Spinner data-icon="inline-start" />
+            Installing...
+          </Button>
         {:else}
-          {#if installing}
-            <Button disabled size="sm">
-              <Spinner data-icon="inline-start" />
-              Installing...
-            </Button>
-          {:else}
-            <Button onclick={() => (dialogOpen = true)}>Download Mod</Button>
-          {/if}
+          <Button disabled={!toolId} onclick={() => (dialogOpen = true)}>
+            Download Mod
+          </Button>
         {/if}
       </div>
     </div>
@@ -370,23 +497,16 @@
 
   <Tabs bind:value={tab}>
     <TabsList>
-      <TabsTrigger value="overview" class="gap-2"
-        ><Info class="size-4" />Overview</TabsTrigger
-      >
-      <TabsTrigger value="3d" class="gap-2"
-        ><Box class="size-4" />3D</TabsTrigger
-      >
-      <TabsTrigger value="changelog" class="gap-2"
-        ><History class="size-4" />Changelog</TabsTrigger
-      >
-      <TabsTrigger value="comments" class="gap-2"
-        ><MessageCircle class="size-4" />Comments</TabsTrigger
-      >
-      <TabsTrigger value="files" class="gap-2">
-        <Files class="size-4" />
-        Files
-        <span class="text-muted-foreground">{files.length}</span>
-      </TabsTrigger>
+      {#each tabs as t (t.value)}
+        {@const Icon = t.icon}
+        <TabsTrigger value={t.value} class="gap-2">
+          <Icon class="size-4" />
+          {t.label}
+          {#if t.value === "files"}
+            <span class="text-muted-foreground">{files.length}</span>
+          {/if}
+        </TabsTrigger>
+      {/each}
     </TabsList>
 
     <TabsContent value="overview" class="mt-4 flex flex-col gap-4">
@@ -406,71 +526,12 @@
     <TabsContent value="files" class="mt-4">
       <section class="divide-y overflow-hidden rounded-2xl border bg-card">
         {#each packages as pkg (pkg.pack.id)}
-          {@const working =
-            pkg.status === "queued" ||
-            pkg.status === "downloading" ||
-            pkg.status === "extracting"}
-          <div class="flex items-center gap-4 px-6 py-4">
-            <div class="min-w-0 flex-1 space-y-0.5">
-              <div class="break-all font-semibold">
-                {pkg.file.fileName}
-              </div>
-              {#if pkg.file.description}
-                <div class="text-sm text-muted-foreground">
-                  {pkg.file.description}
-                </div>
-              {/if}
-              <div class="flex gap-3 text-sm text-muted-foreground">
-                <span class="font-medium">{formatSize(pkg.file.size)}</span>
-                <span>Updated {ago(pkg.file.addedAt)}</span>
-                <span>{pkg.file.downloadCount.toLocaleString()} downloads</span>
-              </div>
-            </div>
-
-            {#if pkg.pack.storage === StorageState.StorageCold}
-              <Badge variant="outline">Compressed</Badge>
-            {/if}
-
-            {#if working}
-              <div class="w-40 space-y-1">
-                <Progress value={progressPct(pkg.pack)} />
-                <div class="text-xs capitalize text-muted-foreground">
-                  {pkg.status}…
-                </div>
-              </div>
-            {:else if pkg.status === "available"}
-              <Button
-                size="sm"
-                variant="outline"
-                class="gap-2"
-                onclick={() => (dialogOpen = true)}
-              >
-                <Download class="size-4" />
-                Install
-              </Button>
-            {:else if pkg.status === "error"}
-              <Badge variant="destructive">Failed</Badge>
-              <Button
-                size="sm"
-                variant="outline"
-                onclick={() => (dialogOpen = true)}>Retry</Button
-              >
-            {:else}
-              {#if pkg.status === "update"}
-                <Badge variant="outline">Update available</Badge>
-              {/if}
-              <Switch
-                checked={pkg.pack.enabled}
-                disabled={isBusy(pkg.pack)}
-                onCheckedChange={(on) => setPackEnabled(pkg.pack, on)}
-              />
-            {/if}
-          </div>
+          {@render fileRow(pkg)}
         {/each}
       </section>
     </TabsContent>
 
-    {#each ["3d", "changelog", "comments"] as v (v)}
+    {#each comingSoon as v (v)}
       <TabsContent value={v} class="mt-4">
         <section class="rounded-2xl border bg-card p-8 text-muted-foreground">
           Not available yet.

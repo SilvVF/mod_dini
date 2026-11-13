@@ -51,7 +51,7 @@ func (g *GameBanana) Page(ctx context.Context, submissionID string) (SubmissionP
 
 	s, files := MapModPageResponse(res)
 
-	return SubmissionPage{s, files}, nil
+	return SubmissionPage{nil, s, files}, nil
 }
 
 func extractSlug(profileURL string, id int) string {

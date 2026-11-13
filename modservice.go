@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,6 +36,11 @@ func (ms *ModService) lockMod(modID string) (unlock func()) {
 	mu := v.(*sync.Mutex)
 	mu.Lock()
 	return mu.Unlock
+}
+
+func (ms *ModService) SetActiveTool(toolId string) error {
+	_, err := ms.settings.SetValue("tool.active", mustJSON(toolId))
+	return err
 }
 
 func (ms *ModService) OpenKeybindsWindow() {
@@ -513,21 +517,21 @@ func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
 		return p, err
 	}
 
-	// resolve the local name for the category of this page
 	rootFolders, err := ms.FolderConfig()
-
-	characters := []CharacterFolder{}
+outer:
 	for _, f := range rootFolders {
-		characters = append(characters, slices.Collect(maps.Values(f.Characters.Characters))...)
-	}
-
-	for _, character := range characters {
-		categoryId := character.Sources[providerId]
-		if categoryId == p.Submission.Category {
-			p.Submission.Hero = &character.Name
-			break
+		for _, character := range f.Characters.Characters {
+			categoryId := character.Sources[providerId]
+			if categoryId == p.Submission.Category {
+				log.Println("search", p.Submission.Category, character.Name, f.ID)
+				p.Submission.Hero = &character.Name
+				p.ResolvedToolId = &f.ID
+				break outer
+			}
 		}
 	}
+
+	log.Println("resolved", p.Submission.Hero, p.ResolvedToolId)
 
 	return p, nil
 }
@@ -636,6 +640,22 @@ func (ms *ModService) DefaultSettings() []Setting {
 			WithSection("General").
 			WithIcon("globe").
 			WithKeywords("locale", "translation"),
+		NewDropdown(
+			"tool.active",
+			CategoryGeneral,
+			"Tool",
+			"Set the active tool",
+			[]Option{
+				{Value: "zzmi", Label: "ZZMI"},
+				{Value: "wwmi", Label: "WWMI"},
+				{Value: "gimi", Label: "GIMI"},
+				{Value: "srmi", Label: "SRMI"},
+			},
+			"zzmi",
+		).
+			WithSection("General").
+			WithIcon("globe").
+			WithKeywords("active", "tool"),
 		NewToggle(
 			"general.hide_unconfigured_games",
 			CategoryGeneral,

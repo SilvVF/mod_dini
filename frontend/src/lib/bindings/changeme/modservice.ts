@@ -61,6 +61,10 @@ export function Save(toolId: string, sub: $models.Submission, files: $models.Sub
     return $Call.ByID(1363098684, toolId, sub, files, selected);
 }
 
+export function SetActiveTool(toolId: string): $CancellablePromise<void> {
+    return $Call.ByID(2401954947, toolId);
+}
+
 export function Settings(): $CancellablePromise<$models.Setting[] | null> {
     return $Call.ByID(1348616436);
 }
