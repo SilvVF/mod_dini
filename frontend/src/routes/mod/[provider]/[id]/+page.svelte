@@ -42,6 +42,7 @@
   import { page } from "$app/state";
   import Gallery from "../../../../lib/components/dini/Gallery.svelte";
   import Spinner from "#lib/components/ui/spinner/spinner.svelte";
+  import { appState } from "#lib/state/app.svelte.ts";
 
   let { data }: PageProps = $props();
 
@@ -49,7 +50,7 @@
   const files = $derived(data.files);
 
   const characters = $derived(
-    compact(data.rootFolder.characters.characters ?? {}),
+    compact(data.rootFolder[appState.activeTool].characters.characters ?? {}),
   );
 
   const saved = getSavedModsContext();

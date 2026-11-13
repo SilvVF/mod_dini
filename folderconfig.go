@@ -239,7 +239,7 @@ func DefaultRootFolder(id, name string) RootFolder {
 				ID:      "others",
 				Name:    "Others",
 				Custom:  false,
-				Sources: map[string]string{"local": "others", "gamebanna": "29874"},
+				Sources: map[string]string{"local": "others"},
 				Config: FolderConfig{
 					Visible: true,
 					Sort: SortConfig{

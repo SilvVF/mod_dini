@@ -79,8 +79,10 @@
   });
 </script>
 
-<div class="space-y-4">
-  <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+<div class="overflow-hidden max-h-screen space-y-4">
+  <div
+    class="flex flex-col justify-between bg-background/50 backdrop-blur-lg z-10 gap-3 sm:flex-row sm:items-center sticky top-0"
+  >
     <h2 class="text-xl font-semibold text-foreground">Submissions</h2>
 
     <input
@@ -96,7 +98,7 @@
   {:else if query.error}
     <p class="text-destructive">Error: {query.error.message}</p>
   {:else}
-    <div bind:this={container} class="h-[75vh] overflow-y-auto">
+    <div bind:this={container} class="max-h-screen overflow-y-auto">
       <div
         class="relative w-full"
         style:height={`${$virtualizer.getTotalSize()}px`}
@@ -106,7 +108,9 @@
             class="absolute left-0 top-0 w-full"
             style:transform={`translateY(${item.start}px)`}
           >
-            <SubmissionPreview submission={submissions[item.index]!} />
+            {#if submissions[item.index]}
+              <SubmissionPreview submission={submissions[item.index]!} />
+            {/if}
           </div>
         {/each}
       </div>

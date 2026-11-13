@@ -9,6 +9,7 @@ import {
   type SubmissionFile,
 } from "../bindings/changeme";
 import { compact } from "#lib/ts-ext.ts";
+import { appState } from "#lib/state/app.svelte.ts";
 
 export interface SavedMods {
   mods: Record<string, ModSaved>;
@@ -27,7 +28,7 @@ export function setSavedModsContext(initial: () => Record<string, ModSaved>) {
     mods: initial(),
     dlProgress: {},
     add(sub, files, packs) {
-      ModService.Save(sub, files, packs).catch((e) => {
+      ModService.Save(appState.activeTool, sub, files, packs).catch((e) => {
         console.log(e);
       });
     },

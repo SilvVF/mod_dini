@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -81,9 +83,42 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 		"zzmi",
 		"Zenless Zone Zero",
 	)
+	ms.fs.CreateIfNotExists(
+		"gimi",
+		"Genshin Impact",
+	)
+	ms.fs.CreateIfNotExists(
+		"wwmi",
+		"Wuthering Waves",
+	)
+	ms.fs.CreateIfNotExists(
+		"srmi",
+		"Honkai Star Rail",
+	)
 
 	_, err = ms.fs.Update("zzmi", func(folder *RootFolder) error {
 		folder.Characters = ZenlessCharacters
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	_, err = ms.fs.Update("srmi", func(folder *RootFolder) error {
+		folder.Characters = StarRailCharacters
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	_, err = ms.fs.Update("wwmi", func(folder *RootFolder) error {
+		folder.Characters = WutheringWavesCharacters
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	_, err = ms.fs.Update("gimi", func(folder *RootFolder) error {
+		folder.Characters = GenshinCharacters
 		return nil
 	})
 
@@ -113,13 +148,18 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 	return nil
 }
 
-func (ms *ModService) FolderConfig(toolId string) (RootFolder, error) {
-	f, err := ms.fs.Get(toolId)
+func (ms *ModService) FolderConfig() (map[string]RootFolder, error) {
+	zzmi, _ := ms.fs.Get("zzmi")
+	srmi, _ := ms.fs.Get("srmi")
+	wwmi, _ := ms.fs.Get("wwmi")
+	gimi, _ := ms.fs.Get("gimi")
 
-	if err != nil {
-		log.Println("folder get ", err)
-	}
-	return f, err
+	return map[string]RootFolder{
+		"zzmi": zzmi,
+		"srmi": srmi,
+		"wwmi": wwmi,
+		"gimi": gimi,
+	}, nil
 }
 
 func (ms *ModService) GetKeyBinds() (map[string]map[string]ModKeyBindPreset, error) {
@@ -404,11 +444,12 @@ func (ms *ModService) packPaths(mod ModSaved, p Pack) (packPaths, error) {
 	}, nil
 }
 
-func (ms *ModService) Save(sub Submission, files []SubmissionFile, selected []Pack) error {
+func (ms *ModService) Save(toolId string, sub Submission, files []SubmissionFile, selected []Pack) error {
 	log.Println("saving ModSaved", selected)
+	if !slices.Contains([]string{"zzmi", "wwmi", "gimi", "srmi"}, toolId) {
+		return errors.New("invalid tool id")
+	}
 
-	//todo(pass tool id dynamically)
-	toolId := "zzmi"
 	modID := sub.Provider + ":" + sub.SubmissionID
 	outputDir, err := GetSetting[string](ms.settings, toolId+".folder")
 
@@ -473,8 +514,14 @@ func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
 	}
 
 	// resolve the local name for the category of this page
-	f, err := ms.fs.Get("zzmi")
-	for _, character := range f.Characters.Characters {
+	rootFolders, err := ms.FolderConfig()
+
+	characters := []CharacterFolder{}
+	for _, f := range rootFolders {
+		characters = append(characters, slices.Collect(maps.Values(f.Characters.Characters))...)
+	}
+
+	for _, character := range characters {
 		categoryId := character.Sources[providerId]
 		if categoryId == p.Submission.Category {
 			p.Submission.Hero = &character.Name
@@ -511,6 +558,51 @@ func (ms *ModService) DefaultSettings() []Setting {
 			}).
 			WithActionHandler(ms.settings, "zzmi.xxmi", "Use XXMI's", func() error {
 				return ms.setModFolder("zzmi", true)
+			}).
+			MakeUneditable(),
+		NewText(
+			"gimi.folder",
+			CategoryFolders,
+			"Genshin Impact Mods Folder",
+			"",
+			"",
+		).
+			WithIcon("folder").
+			WithActionHandler(ms.settings, "change.gimi", "Change", func() error {
+				return ms.setModFolder("gimi", false)
+			}).
+			WithActionHandler(ms.settings, "gimi.xxmi", "Use XXMI's", func() error {
+				return ms.setModFolder("gimi", true)
+			}).
+			MakeUneditable(),
+		NewText(
+			"wwmi.folder",
+			CategoryFolders,
+			"Wuthering Waves Mods Folder",
+			"",
+			"",
+		).
+			WithIcon("folder").
+			WithActionHandler(ms.settings, "change.wwmi", "Change", func() error {
+				return ms.setModFolder("wwmi", false)
+			}).
+			WithActionHandler(ms.settings, "wwmi.xxmi", "Use XXMI's", func() error {
+				return ms.setModFolder("wwmi", true)
+			}).
+			MakeUneditable(),
+		NewText(
+			"srmi.folder",
+			CategoryFolders,
+			"Honkai Star rail Mods Folder",
+			"",
+			"",
+		).
+			WithIcon("folder").
+			WithActionHandler(ms.settings, "change.srmi", "Change", func() error {
+				return ms.setModFolder("srmi", false)
+			}).
+			WithActionHandler(ms.settings, "srmi.xxmi", "Use XXMI's", func() error {
+				return ms.setModFolder("srmi", true)
 			}).
 			MakeUneditable(),
 		NewText(

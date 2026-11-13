@@ -3,8 +3,7 @@
     ModKeyBindPreset,
     ModSaved,
   } from "#lib/bindings/changeme/models.ts";
-
-  type ModKeyBind = NonNullable<ModKeyBindPreset["values"]>[number];
+  import * as Kbd from "#lib/components/ui/kbd/index.ts";
 
   type Props = {
     data: {
@@ -16,11 +15,20 @@
     title?: string;
   };
 
+  const keyText: { [key: string]: string } = {
+    VK_UP: "↑",
+    VK_DOWN: "↓",
+    VK_LEFT: "←",
+    VK_RIGHT: "→",
+    VK_RBUTTON: "Mouse 2",
+    VK_LBUTTON: "Mouse 1"
+  };
+
   let { data, toolId, title = "Keybinds" }: Props = $props();
 </script>
 
 <div
-  class="flex max-h-screen min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-xl"
+  class="flex max-h-screen min-h-0 flex-col overflow-hidden border border-border bg-card text-card-foreground shadow-xl"
 >
   <!-- Header -->
   <div
@@ -68,17 +76,19 @@
                       : bind.section}
                   </span>
 
-                  <div class="flex shrink-0 flex-wrap justify-end gap-1">
+                  <Kbd.Group class="flex shrink-0 flex-wrap justify-end gap-1">
                     {#each bind.key.split(" ") as key, j (`${j}-${key}`)}
-                      {#if key}
-                        <kbd
-                          class="rounded-md border border-border bg-background/70 px-2 py-0.5 text-xs font-semibold leading-4 shadow-sm"
+                      {#if !key.startsWith("no")}
+                        <Kbd.Root
+                          class="rounded-md border border-border
+                          bg-background/70 px-2 py-0.5 text-xs font-semibold
+                          leading-4 shadow-sm"
                         >
-                          {key}
-                        </kbd>
+                          {keyText[key] ?? key}
+                        </Kbd.Root>
                       {/if}
                     {/each}
-                  </div>
+                  </Kbd.Group>
                 </div>
               {/each}
             {/each}

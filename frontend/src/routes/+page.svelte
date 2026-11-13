@@ -14,30 +14,37 @@
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import ModCard from "#lib/components/dini/ModCard.svelte";
   import ModLibraryHeader from "#lib/components/dini/ModLibraryHeader.svelte";
-  import { sumBy } from "#lib/ts-ext.ts";
+  import { compact, sumBy } from "#lib/ts-ext.ts";
   import {
     groupModsByFolders,
     type SelectedItem,
   } from "#lib/contexts/group-mods.ts";
   import LibraryConfig from "#lib/components/dini/LibraryConfig.svelte";
   import type { GameConfig } from "#lib/components/dini/types.ts";
-  import { ModsLoaded } from "#lib/bindings/events/index.ts";
   import { formatSize } from "#lib/components/dini/utils.ts";
+  import { appState, toolBanner, toolName } from "#lib/state/app.svelte.ts";
 
   let { data }: PageProps = $props();
 
   const saved = getSavedModsContext();
 
   let selectedItemId = $state<string | undefined>(undefined);
+  const toolId = $derived(appState.activeTool);
+  const rootFolder = $derived(data.rootFolder[toolId]);
+  const subfoldersRecord = $derived(compact(rootFolder.subfolders ?? {}));
+  const charactersRecord = $derived(
+    compact(rootFolder.characters.characters ?? {}),
+  );
+
   const selected = $derived.by<SelectedItem>(() => {
     if (!selectedItemId) return { type: "nothing", value: null };
     const subfolder = {
       type: "character",
-      value: data.subfolders[selectedItemId],
+      value: subfoldersRecord[selectedItemId],
     };
     const character = {
       type: "subfolder",
-      value: data.characters[selectedItemId],
+      value: charactersRecord[selectedItemId],
     };
 
     return (
@@ -56,14 +63,14 @@
     selectedModId = undefined;
   });
 
-  const characters = $derived(Object.entries(data.characters));
-  const subfolders = $derived(Object.entries(data.subfolders));
-  const toolId = "zzmi";
+  const characters = $derived(Object.entries(charactersRecord));
+  const subfolders = $derived(Object.entries(subfoldersRecord));
+
   const mods = $derived(
     Object.values(saved.mods).filter((m) => m.toolId === toolId),
   );
   const groupedMods = $derived(
-    groupModsByFolders(mods, data.rootFolder, data.characters, data.subfolders),
+    groupModsByFolders(mods, rootFolder, charactersRecord, subfoldersRecord),
   );
 
   const selectedGroups = $derived(
@@ -105,10 +112,9 @@
 
   let config = $derived<GameConfig>({
     game: {
-      id: "zzmi",
-      name: "Zenless Zone Zero",
-      image:
-        "https://images.gamebanana.com/img/Webpage/Game/Profile/Background/66868c3874664.jpg",
+      id: appState.activeTool,
+      name: toolName(appState.activeTool),
+      image: toolBanner(appState.activeTool),
     },
     preset: {
       id: "p1",
@@ -242,6 +248,7 @@
           charactersCount={characters.length}
           subfoldersCount={subfolders.length}
           mods={selectedCount}
+          game={config.game.name.toUpperCase()}
           loaded={0}
         />
         <div

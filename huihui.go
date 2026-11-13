@@ -153,7 +153,7 @@ func (h *HuiHuiProvider) Page(ctx context.Context, submissionID string) (Submiss
 
 func (*HuiHuiProvider) List(ctx context.Context, p ListParams) (SubmissionList, error) {
 
-	url := "https://huihui648.org/category/zzz/page/" + strconv.Itoa(p.Page)
+	url := "https://huihui648.org/category/" + p.Cat + "/page/" + strconv.Itoa(p.Page)
 
 	res, err := http.Get(url)
 	if err != nil {
@@ -162,6 +162,10 @@ func (*HuiHuiProvider) List(ctx context.Context, p ListParams) (SubmissionList, 
 	defer res.Body.Close()
 
 	subs, next, err := ParseCategoryPage(res.Body)
+
+	if err != nil {
+		return SubmissionList{}, err
+	}
 
 	return SubmissionList{
 		Submissions: subs,
