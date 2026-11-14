@@ -13,6 +13,16 @@ import (
 	"gopkg.in/ini.v1"
 )
 
+var KEYBIND_BUCKET = []byte("keybinds_bucket")
+var ORIGINAL_KEY = []byte("original")
+
+var ErrKeybindBucketNotCreated = errors.New("keybinds bucket was not created yet")
+
+type KeybindStore struct {
+	db *bbolt.DB
+	ms *ModService
+}
+
 type ModKeyBind struct {
 	Section       string   `json:"section"`
 	Key           string   `json:"key"`
@@ -30,18 +40,6 @@ type ModKeyBindPreset struct {
 	Values    []ModKeyBind `json:"values"`
 	CreatedAt time.Time    `json:"createdAt"`
 	UpdatedAt time.Time    `json:"updatedAt"`
-}
-
-var KEYBIND_BUCKET = []byte("keybinds_bucket")
-var ErrKeybindBucketNotCreated = errors.New("keybinds bucket was not created yet")
-
-var ORIGINAL_KEY = []byte("original")
-
-const TEST_MOD_PATH = "C:\\Users\\david\\SkinMods\\ZZMI\\Mods\\jane_doe_-_hazeker_redux"
-
-type KeybindStore struct {
-	db *bbolt.DB
-	ms *ModService
 }
 
 func (ks *KeybindStore) GetAll() (map[string]map[string]ModKeyBindPreset, error) {

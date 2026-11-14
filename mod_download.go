@@ -13,23 +13,6 @@ import (
 	"time"
 )
 
-func (s InstallState) String() string {
-	switch s {
-	case InstallErr:
-		return "error"
-	case InstallQueued:
-		return "queued"
-	case InstallDownloading:
-		return "downloading"
-	case InstallExtracting:
-		return "extracting"
-	case InstallReady:
-		return "ready"
-	default:
-		return fmt.Sprintf("unknown(%d)", int(s))
-	}
-}
-
 func (ms *ModService) downloadMod(ctx context.Context, mod ModSaved) error {
 	log.Printf("[mod] download start mod=%s packages=%d", mod.ID, len(mod.Packs))
 	start := time.Now()
@@ -234,7 +217,12 @@ func httpDownload(
 		total = sf.Size
 	}
 
-	f, err := os.CreateTemp(MOD_TEST_FOLDER, "*-"+sf.FileName)
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.CreateTemp(filepath.Join(cacheDir, "Temp"), "*-"+sf.FileName)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +247,7 @@ func httpDownload(
 	return f, nil
 }
 
-// newProgressLogger returns a callback that logs at most once per 25% step.
+// callback that logs at most once per 25% step.
 func newProgressLogger(label string) func(total, progress int64) {
 	lastStep := -1
 	return func(total, progress int64) {

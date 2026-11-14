@@ -37,8 +37,8 @@ func getGithubContents(owner, repo, path string) ([]GitHubContent, error) {
 	return contents, err
 }
 
-func getHashes(owner, repo, branch string) (map[string][]byte, error) {
-	characterData, err := getGithubContents(owner, repo, branch)
+func getHashes(owner, repo, path string) (map[string][]byte, error) {
+	characterData, err := getGithubContents(owner, repo, path)
 	if err != nil {
 		return nil, err
 	}
@@ -50,9 +50,10 @@ func getHashes(owner, repo, branch string) (map[string][]byte, error) {
 			continue
 		}
 
+		// https://raw.githubusercontent.com/leotorrez/ZZ-Model-Importer-Assets/refs/heads/main/PlayerCharacterData/Dialyn/hash.json
 		url := fmt.Sprintf(
-			"https://raw.githubusercontent.com/%s/%s/%s/%s/hash.json",
-			owner, repo, branch, characterDir.Path,
+			"https://raw.githubusercontent.com/%s/%s/refs/heads/main/%s/hash.json",
+			owner, repo, characterDir.Path,
 		)
 
 		resp, err := http.Get(url)

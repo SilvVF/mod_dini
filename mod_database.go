@@ -14,6 +14,7 @@ var (
 	ErrDownloadBucketNotCreated = errors.New("download bucket has not been created yet")
 )
 
+// broadcasts update event when no err
 func (ms *ModService) updateMod(modId string, update func(mod *ModSaved) error) (ModSaved, error) {
 
 	var mod ModSaved
@@ -70,31 +71,32 @@ func updateModTx(tx *bolt.Tx, modId string, update func(mod *ModSaved) error) (M
 	return mod, err
 }
 
-func updatePackTx(tx *bolt.Tx, modID, pkgID string, update func(*Pack) error) (Pack, error) {
-	m, err := updateModTx(tx, modID, func(mod *ModSaved) error {
-		pack, idx, ok := mod.GetPackage(pkgID)
-		if !ok {
-			return fmt.Errorf("pack %s not found", pkgID)
-		}
+// func updatePackTx(tx *bolt.Tx, modID, pkgID string, update func(*Pack) error) (Pack, error) {
+// 	m, err := updateModTx(tx, modID, func(mod *ModSaved) error {
+// 		pack, idx, ok := mod.GetPackage(pkgID)
+// 		if !ok {
+// 			return fmt.Errorf("pack %s not found", pkgID)
+// 		}
 
-		if err := update(&pack); err != nil {
-			return err
-		}
-		mod.Packs[idx] = pack
+// 		if err := update(&pack); err != nil {
+// 			return err
+// 		}
+// 		mod.Packs[idx] = pack
 
-		return nil
-	})
+// 		return nil
+// 	})
 
-	if err != nil {
-		log.Printf("[mod] update package failed mod=%s pkg=%s: %v", modID, pkgID, err)
-		return Pack{}, err
-	}
+// 	if err != nil {
+// 		log.Printf("[mod] update package failed mod=%s pkg=%s: %v", modID, pkgID, err)
+// 		return Pack{}, err
+// 	}
 
-	p, _, _ := m.GetPackage(pkgID)
+// 	p, _, _ := m.GetPackage(pkgID)
 
-	return p, nil
-}
+// 	return p, nil
+// }
 
+// broadcasts update when no err
 func (ms *ModService) updatePack(modID, pkgID string, update func(*Pack) error) (Pack, error) {
 
 	m, err := ms.updateMod(modID, func(mod *ModSaved) error {

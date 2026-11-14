@@ -11,16 +11,6 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-type hashComponent struct {
-	Name          string       `json:"component_name"`
-	DrawVB        string       `json:"draw_vb"`
-	PositionVB    string       `json:"position_vb"`
-	BlendVB       string       `json:"blend_vb"`
-	TexcoordVB    string       `json:"texcoord_vb"`
-	IB            string       `json:"ib"`
-	TextureHashes [][][]string `json:"texture_hashes"` // per object: [slot, ext, hash]
-}
-
 const (
 	weightIB       = 3.0
 	weightPosition = 3.0
@@ -33,7 +23,21 @@ const (
 	minHashScore = 4.0
 )
 
-var hex8 = regexp.MustCompile(`^[0-9a-f]{8}$`)
+var (
+	// key: HASH -> map{ owner: weight }, owner is "<tool>:<local character id>"
+	HASH_BUCKET = []byte("hash_index")
+	hex8        = regexp.MustCompile(`^[0-9a-f]{8}$`)
+)
+
+type hashComponent struct {
+	Name          string       `json:"component_name"`
+	DrawVB        string       `json:"draw_vb"`
+	PositionVB    string       `json:"position_vb"`
+	BlendVB       string       `json:"blend_vb"`
+	TexcoordVB    string       `json:"texcoord_vb"`
+	IB            string       `json:"ib"`
+	TextureHashes [][][]string `json:"texture_hashes"` // per object: [slot, ext, hash]
+}
 
 // weights returns each distinct hash of the component with how identifying it is.
 func (c hashComponent) weights() map[string]float64 {
@@ -59,9 +63,6 @@ func (c hashComponent) weights() map[string]float64 {
 	}
 	return out
 }
-
-// key: HASH -> map{ owner: weight }, owner is "<tool>:<local character id>"
-var HASH_BUCKET = []byte("hash_index")
 
 // indexCharacter only ever adds. Mods made before a game patch still use the old hashes,
 // so refreshing the JSON must not delete what an earlier version contributed.
