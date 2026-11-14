@@ -7,7 +7,7 @@ const (
 	InstallQueued
 	InstallDownloading
 	InstallExtracting
-	InstallReady // downloaded + extracted; deployment is the Enabled flag
+	InstallReady
 )
 
 type StorageState int
@@ -40,7 +40,9 @@ type Pack struct {
 
 type ModSaved struct {
 	ID              string           `json:"id"`
-	ToolId          string           `json:"toolId"`
+	ToolId          ToolID           `json:"toolId"`
+	CharacterId     string           `json:"characterId"`
+	CharacterSource string           `json:"characterSource"` // "category", "hash" or "user"
 	Submission      Submission       `json:"submission"`
 	SubmissionFiles []SubmissionFile `json:"submissionFiles"`
 	Packs           []Pack           `json:"packages"`

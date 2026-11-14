@@ -30,11 +30,11 @@ func (s InstallState) String() string {
 	}
 }
 
-func (ms *ModService) DownloadMod(mod ModSaved) error {
+func (ms *ModService) downloadMod(ctx context.Context, mod ModSaved) error {
 	log.Printf("[mod] download start mod=%s packages=%d", mod.ID, len(mod.Packs))
 	start := time.Now()
 
-	outputDir, err := GetSetting[string](ms.settings, "zzmi.folder")
+	outputDir, err := ms.toolRoot(mod.ToolId)
 	if err != nil {
 		log.Printf("[mod] read output dir setting failed: %v", err)
 		return err
@@ -51,7 +51,7 @@ func (ms *ModService) DownloadMod(mod ModSaved) error {
 			continue
 		}
 
-		if err := ms.downloadPackage(context.Background(), mod, pkg, outputDir); err != nil {
+		if err := ms.downloadPackage(ctx, mod, pkg, outputDir); err != nil {
 			log.Printf("[mod] package failed mod=%s pkg=%s: %v", mod.ID, pkg.ID, err)
 
 			ms.updatePack(mod.ID, pkg.ID, func(p *Pack) error {

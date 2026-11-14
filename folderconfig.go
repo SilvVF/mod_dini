@@ -9,7 +9,7 @@ import (
 )
 
 type RootFolder struct {
-	ID         string               `json:"id"`
+	ID         ToolID               `json:"id"`
 	Name       string               `json:"name"`
 	Config     FolderConfig         `json:"config"`
 	Subfolders map[string]Subfolder `json:"subfolders"`

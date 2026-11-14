@@ -13,7 +13,8 @@ export {
     InstallState,
     Kind,
     SortBy,
-    StorageState
+    StorageState,
+    ToolID
 } from "./models.js";
 
 export type {

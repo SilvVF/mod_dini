@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
@@ -17,18 +16,41 @@ import (
 )
 
 var ErrPackNotCold = errors.New("pack is not cold")
+var ErrModBusy = errors.New("this mod is being installed or changed")
 
 type ModService struct {
 	app            *application.App
 	keybindsWindow *application.WebviewWindow
 	providers      ProviderRegistry
-	gbApi          GbApi
 	ks             *KeybindStore
 	fs             *FolderStore
 	db             *bolt.DB
 	sweeper        *Sweeper
 	settings       *SettingsStore
 	modLocks       sync.Map
+}
+
+func NewModService(app *application.App, db *bolt.DB) *ModService {
+	settingsStore, err := NewSettingsStore(db)
+	if err != nil {
+		panic(err)
+	}
+
+	ms := &ModService{
+		settings: settingsStore,
+		providers: ProviderRegistry{
+			"gamebanana": NewGameBanana(&GbApi{}),
+			"huihui":     &HuiHuiProvider{},
+		},
+	}
+
+	ms.ks = &KeybindStore{
+		db: ms.db,
+		ms: ms,
+	}
+	ms.sweeper = NewSweeper(ms)
+
+	return ms
 }
 
 func (ms *ModService) lockMod(modID string) (unlock func()) {
@@ -38,9 +60,47 @@ func (ms *ModService) lockMod(modID string) (unlock func()) {
 	return mu.Unlock
 }
 
-func (ms *ModService) SetActiveTool(toolId string) error {
-	_, err := ms.settings.SetValue("tool.active", mustJSON(toolId))
-	return err
+func (ms *ModService) tryLockMod(modID string) (unlock func(), ok bool) {
+	v, _ := ms.modLocks.LoadOrStore(modID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	if !mu.TryLock() {
+		return nil, false
+	}
+	return mu.Unlock, true
+}
+
+func (ms *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	if err := ms.settings.Sync(ms.DefaultSettings()); err != nil {
+		panic(err)
+	}
+
+	if err := ms.db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(DL_BUCKET)
+		return err
+	}); err != nil {
+		panic(err)
+	}
+
+	if err := ms.seedTools(); err != nil {
+		panic(err)
+	}
+
+	// todo(should be fast enough to call blocking possibly move to goroutine + event when finished if startup is slow)
+	if err := ms.reconcile(); err != nil {
+		log.Printf("reconcile: %v", err)
+	}
+
+	changes := ms.settings.Changes()
+	go func() {
+		for c := range changes {
+			log.Printf("changed setting: %v", c)
+			ms.app.Event.Emit("setting-updated", c)
+		}
+	}()
+
+	go ms.sweeper.Run()
+
+	return nil
 }
 
 func (ms *ModService) OpenKeybindsWindow() {
@@ -60,127 +120,8 @@ func (ms *ModService) OpenKeybindsWindow() {
 	})
 }
 
-func (ms *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
-	ms.providers = ProviderRegistry{
-		"gamebanana": NewGameBanana(&GbApi{}),
-		"huihui":     &HuiHuiProvider{},
-	}
-	ms.ks = &KeybindStore{
-		db: ms.db,
-		ms: ms,
-	}
-
-	err := ms.settings.Sync(ms.DefaultSettings())
-	if err != nil {
-		panic(err)
-	}
-
-	err = ms.db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(DL_BUCKET)
-		return err
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	ms.fs.CreateIfNotExists(
-		"zzmi",
-		"Zenless Zone Zero",
-	)
-	ms.fs.CreateIfNotExists(
-		"gimi",
-		"Genshin Impact",
-	)
-	ms.fs.CreateIfNotExists(
-		"wwmi",
-		"Wuthering Waves",
-	)
-	ms.fs.CreateIfNotExists(
-		"srmi",
-		"Honkai Star Rail",
-	)
-
-	_, err = ms.fs.Update("zzmi", func(folder *RootFolder) error {
-		folder.Characters = ZenlessCharacters
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	_, err = ms.fs.Update("srmi", func(folder *RootFolder) error {
-		folder.Characters = StarRailCharacters
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	_, err = ms.fs.Update("wwmi", func(folder *RootFolder) error {
-		folder.Characters = WutheringWavesCharacters
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	_, err = ms.fs.Update("gimi", func(folder *RootFolder) error {
-		folder.Characters = GenshinCharacters
-		return nil
-	})
-
-	if err != nil {
-		panic(err)
-	}
-
-	changes := ms.settings.Changes()
-	go func() {
-		for c := range changes {
-			log.Printf("changed setting: %v", c)
-			ms.app.Event.Emit("setting-updated", c)
-		}
-	}()
-
-	ms.sweeper = NewSweeper(ms)
-	go ms.sweeper.Run()
-
-	// res, err := ms.Initial()
-	// if err != nil {
-	// 	return err
-	// }
-	// for _, m := range res {
-	// 	ms.ks.SaveDefault(m.ID)
-	// }
-
-	return nil
-}
-
-func (ms *ModService) FolderConfig() (map[string]RootFolder, error) {
-	zzmi, _ := ms.fs.Get("zzmi")
-	srmi, _ := ms.fs.Get("srmi")
-	wwmi, _ := ms.fs.Get("wwmi")
-	gimi, _ := ms.fs.Get("gimi")
-
-	return map[string]RootFolder{
-		"zzmi": zzmi,
-		"srmi": srmi,
-		"wwmi": wwmi,
-		"gimi": gimi,
-	}, nil
-}
-
 func (ms *ModService) GetKeyBinds() (map[string]map[string]ModKeyBindPreset, error) {
 	return ms.ks.GetAll()
-}
-
-func (ms *ModService) Settings() ([]Setting, error) {
-	return ms.settings.All()
-}
-
-func (ms *ModService) OnSettingAction(key string, action string) error {
-	return ms.settings.DoAction(key, action)
-}
-
-func (ms *ModService) UpdateSetting(key string, value json.RawMessage) error {
-	_, err := ms.settings.SetValue(key, value)
-	return err
 }
 
 func (ms *ModService) Initial() (map[string]ModSaved, error) {
@@ -219,29 +160,18 @@ func (ms *ModService) rescanXXMI() error {
 	return nil
 }
 
-func (ms *ModService) setModFolder(toolId string, reset bool) error {
-	if reset {
-		path, err := GetSetting[string](ms.settings, "xxmi.folder")
-		if err != nil || path == "" {
-			return err
-		}
-		_, err = SetSettingValue(ms.settings, toolId, filepath.Join(path, toolId+"/mods"))
-		return err
-	} else {
-		path, err := ms.app.Dialog.
-			OpenFile().
-			SetTitle("Select Folder for" + toolId).
-			CanChooseFiles(false).
-			CanChooseDirectories(true).
-			PromptForSingleSelection()
-
-		if err != nil || path == "" {
-			return err
-		}
-
-		_, err = SetSettingValue(ms.settings, toolId+".folder", path)
-		return err
+func (ms *ModService) toolRoot(toolID ToolID) (string, error) {
+	root, err := GetSetting[string](ms.settings, toolID+".folder")
+	if err != nil {
+		return "", err
 	}
+	if root == "" {
+		return "", fmt.Errorf("the %s folder is not set", toolID)
+	}
+	if info, err := os.Stat(root); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("the %s folder %q is not available", toolID, root)
+	}
+	return root, nil
 }
 
 func (ms *ModService) getMod(id string) (ModSaved, error) {
@@ -429,10 +359,11 @@ type packPaths struct {
 	disabled string // <root>/<dir>/DISABLED_<name>        warm form
 	temp     string // <root>/<dir>/DISABLED_<name>.tmp    extraction target, ignored by the tool
 	archive  string // <root>/<dir>/<name><ArchiveFormat>   cold form
+	part     string
 }
 
 func (ms *ModService) packPaths(mod ModSaved, p Pack) (packPaths, error) {
-	root, err := GetSetting[string](ms.settings, mod.ToolId+".folder")
+	root, err := ms.toolRoot(mod.ToolId)
 	if err != nil {
 		return packPaths{}, err
 	}
@@ -445,22 +376,50 @@ func (ms *ModService) packPaths(mod ModSaved, p Pack) (packPaths, error) {
 		disabled: filepath.Join(dir, "DISABLED_"+base),
 		temp:     filepath.Join(dir, "DISABLED_"+base+".tmp"),
 		archive:  filepath.Join(dir, base+p.ArchiveFormat),
+		part:     filepath.Join(dir, base+".part"),
 	}, nil
 }
 
-func (ms *ModService) Save(toolId string, sub Submission, files []SubmissionFile, selected []Pack) error {
-	log.Println("saving ModSaved", selected)
-	if !slices.Contains([]string{"zzmi", "wwmi", "gimi", "srmi"}, toolId) {
-		return errors.New("invalid tool id")
+func expectedPath(paths packPaths, state StorageState) string {
+	switch state {
+	case StorageActive:
+		return paths.active
+	case StorageCold:
+		return paths.archive
+	case StorageCompressing:
+		return paths.temp
+	case StorageNone:
+		return ""
+	case StorageRestoring:
+		return ""
+	case StorageWarm:
+		return paths.disabled
+	default:
+		panic(fmt.Sprintf("unexpected main.StorageState: %#v", state))
+	}
+}
+
+func (ms *ModService) Save(toolId ToolID, sub Submission, files []SubmissionFile, selected []Pack) error {
+	if _, ok := toolByID(toolId); !ok {
+		return fmt.Errorf("unknown tool %q", toolId)
+	}
+
+	outputDir, err := ms.toolRoot(toolId)
+	if err != nil {
+		return err
 	}
 
 	modID := sub.Provider + ":" + sub.SubmissionID
-	outputDir, err := GetSetting[string](ms.settings, toolId+".folder")
+	log.Printf("save mod=%s tool=%s packs=%d", modID, toolId, len(selected))
 
-	if err != nil || outputDir == "" {
-		log.Println("output dir not canceling save ", modID)
-		return err
+	ms.sweeper.CancelAndWait(modID)
+
+	// need to do this because files on disk are edited and rely on previous state for same mod.
+	unlock, ok := ms.tryLockMod(modID)
+	if !ok {
+		return ErrModBusy
 	}
+	defer unlock()
 
 	modDir := filepath.Join(outputDir, sub.Provider, sub.SubmissionID)
 	if err := os.RemoveAll(modDir); err != nil {
@@ -486,6 +445,11 @@ func (ms *ModService) Save(toolId string, sub Submission, files []SubmissionFile
 		})
 	}
 
+	if _, charID, _, ok := ms.resolveCharacter(sub.Provider, sub.Category); ok {
+		mod.CharacterId = charID
+		mod.CharacterSource = "category"
+	}
+
 	data, err := json.Marshal(mod)
 	if err != nil {
 		return err
@@ -500,9 +464,28 @@ func (ms *ModService) Save(toolId string, sub Submission, files []SubmissionFile
 
 	ms.app.Event.Emit("mod-update", mod)
 
-	go ms.DownloadMod(mod)
+	return ms.downloadMod(ms.app.Context(), mod)
+}
 
-	return nil
+func (ms *ModService) resolveCharacter(providerID, category string) (toolID, local, hero string, ok bool) {
+	if category == "" {
+		return "", "", "", false
+	}
+
+	cfg, err := ms.FolderConfig()
+	if err != nil {
+		log.Printf("resolve character: %v", err)
+		return "", "", "", false
+	}
+
+	for _, folder := range cfg {
+		for charID, c := range folder.Characters.Characters {
+			if c.Sources[providerID] == category {
+				return folder.ID, charID, c.Name, true
+			}
+		}
+	}
+	return "", "", "", false
 }
 
 func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
@@ -512,23 +495,13 @@ func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
 	}
 
 	p, err := prov.Page(context.Background(), pageId)
-
 	if err != nil {
 		return p, err
 	}
 
-	rootFolders, err := ms.FolderConfig()
-outer:
-	for _, f := range rootFolders {
-		for _, character := range f.Characters.Characters {
-			categoryId := character.Sources[providerId]
-			if categoryId == p.Submission.Category {
-				log.Println("search", p.Submission.Category, character.Name, f.ID)
-				p.Submission.Hero = &character.Name
-				p.ResolvedToolId = &f.ID
-				break outer
-			}
-		}
+	if toolId, _, character, ok := ms.resolveCharacter(providerId, p.Submission.Category); ok {
+		p.ResolvedToolId = &toolId
+		p.Submission.Hero = &character
 	}
 
 	log.Println("resolved", p.Submission.Hero, p.ResolvedToolId)
@@ -545,138 +518,4 @@ func (ms *ModService) List(p ListParams) (SubmissionList, error) {
 	}
 
 	return prov.List(context.Background(), p)
-}
-
-func (ms *ModService) DefaultSettings() []Setting {
-	return []Setting{
-		NewText(
-			"zzmi.folder",
-			CategoryFolders,
-			"ZenlessZoneZero Mods Folder",
-			"",
-			"",
-		).
-			WithIcon("folder").
-			WithActionHandler(ms.settings, "change.zzmi", "Change", func() error {
-				return ms.setModFolder("zzmi", false)
-			}).
-			WithActionHandler(ms.settings, "zzmi.xxmi", "Use XXMI's", func() error {
-				return ms.setModFolder("zzmi", true)
-			}).
-			MakeUneditable(),
-		NewText(
-			"gimi.folder",
-			CategoryFolders,
-			"Genshin Impact Mods Folder",
-			"",
-			"",
-		).
-			WithIcon("folder").
-			WithActionHandler(ms.settings, "change.gimi", "Change", func() error {
-				return ms.setModFolder("gimi", false)
-			}).
-			WithActionHandler(ms.settings, "gimi.xxmi", "Use XXMI's", func() error {
-				return ms.setModFolder("gimi", true)
-			}).
-			MakeUneditable(),
-		NewText(
-			"wwmi.folder",
-			CategoryFolders,
-			"Wuthering Waves Mods Folder",
-			"",
-			"",
-		).
-			WithIcon("folder").
-			WithActionHandler(ms.settings, "change.wwmi", "Change", func() error {
-				return ms.setModFolder("wwmi", false)
-			}).
-			WithActionHandler(ms.settings, "wwmi.xxmi", "Use XXMI's", func() error {
-				return ms.setModFolder("wwmi", true)
-			}).
-			MakeUneditable(),
-		NewText(
-			"srmi.folder",
-			CategoryFolders,
-			"Honkai Star rail Mods Folder",
-			"",
-			"",
-		).
-			WithIcon("folder").
-			WithActionHandler(ms.settings, "change.srmi", "Change", func() error {
-				return ms.setModFolder("srmi", false)
-			}).
-			WithActionHandler(ms.settings, "srmi.xxmi", "Use XXMI's", func() error {
-				return ms.setModFolder("srmi", true)
-			}).
-			MakeUneditable(),
-		NewText(
-			"xxmi.folder",
-			CategoryFolders,
-			"XXMI Launcher",
-			"",
-			"",
-		).
-			WithIcon("folder").
-			WithActionHandler(ms.settings, "change.xxmi", "Change", func() error {
-				return ms.setModFolder("xxmi", false)
-			}).
-			WithActionHandler(ms.settings, "xxmi.xxmi", "Rescan", func() error {
-				return ms.rescanXXMI()
-			}).
-			MakeUneditable(),
-		// ---- General ----
-		NewDropdown(
-			"general.language",
-			CategoryGeneral,
-			"Language",
-			"The language of the app's menus and messages. It changes right away.",
-			[]Option{
-				{Value: "en", Label: "English"},
-				{Value: "de", Label: "Deutsch"},
-				{Value: "ja", Label: "日本語"},
-			},
-			"en",
-		).
-			WithSection("General").
-			WithIcon("globe").
-			WithKeywords("locale", "translation"),
-		NewDropdown(
-			"tool.active",
-			CategoryGeneral,
-			"Tool",
-			"Set the active tool",
-			[]Option{
-				{Value: "zzmi", Label: "ZZMI"},
-				{Value: "wwmi", Label: "WWMI"},
-				{Value: "gimi", Label: "GIMI"},
-				{Value: "srmi", Label: "SRMI"},
-			},
-			"zzmi",
-		).
-			WithSection("General").
-			WithIcon("globe").
-			WithKeywords("active", "tool"),
-		NewToggle(
-			"general.hide_unconfigured_games",
-			CategoryGeneral,
-			"Hide games that aren't set up",
-			"Leaves games without an XXMI folder out of the game list. They come back when you turn this off.",
-			false,
-		).
-			WithSection("General").
-			WithIcon("layout-grid"),
-		NewDropdown(
-			"appearance.theme",
-			CategoryAppearance,
-			"Theme",
-			"Fine-tune colors, cards and the background in Customize.",
-			[]Option{
-				{Value: "dark", Label: "Dark", Icon: "theme-dark"},
-				{Value: "light", Label: "Light", Icon: "theme-light"},
-			},
-			"dark",
-		).
-			WithSection("Appearance").
-			WithIcon("palette"),
-	}
 }

@@ -29,7 +29,7 @@ export function EnablePacks(modID: string, ids: string[] | null): $CancellablePr
     return $Call.ByID(1887951704, modID, ids);
 }
 
-export function FolderConfig(): $CancellablePromise<{ [_ in string]?: $models.RootFolder } | null> {
+export function FolderConfig(): $CancellablePromise<{ [_ in $models.ToolID]?: $models.RootFolder } | null> {
     return $Call.ByID(697513691);
 }
 
@@ -57,11 +57,11 @@ export function Page(providerId: string, pageId: string): $CancellablePromise<$m
     return $Call.ByID(3964629098, providerId, pageId);
 }
 
-export function Save(toolId: string, sub: $models.Submission, files: $models.SubmissionFile[] | null, selected: $models.Pack[] | null): $CancellablePromise<void> {
+export function Save(toolId: $models.ToolID, sub: $models.Submission, files: $models.SubmissionFile[] | null, selected: $models.Pack[] | null): $CancellablePromise<void> {
     return $Call.ByID(1363098684, toolId, sub, files, selected);
 }
 
-export function SetActiveTool(toolId: string): $CancellablePromise<void> {
+export function SetActiveTool(toolId: $models.ToolID): $CancellablePromise<void> {
     return $Call.ByID(2401954947, toolId);
 }
 

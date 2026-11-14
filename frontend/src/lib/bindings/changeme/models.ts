@@ -75,10 +75,6 @@ export enum InstallState {
     InstallQueued = 0,
     InstallDownloading = 1,
     InstallExtracting = 2,
-
-    /**
-     * downloaded + extracted; deployment is the Enabled flag
-     */
     InstallReady = 3,
 };
 
@@ -158,7 +154,7 @@ export interface ModKeyBindPreset {
 
 export interface ModSaved {
     "id": string;
-    "toolId": string;
+    "toolId": ToolID;
     "submission": Submission;
     "submissionFiles": SubmissionFile[] | null;
     "packages": Pack[] | null;
@@ -218,7 +214,7 @@ export interface Pack {
 }
 
 export interface RootFolder {
-    "id": string;
+    "id": ToolID;
     "name": string;
     "config": FolderConfig;
     "subfolders": { [_ in string]?: Subfolder } | null;
@@ -412,3 +408,16 @@ export interface SubmissionPage {
     "submission": Submission;
     "submissionFiles": SubmissionFile[] | null;
 }
+
+export type ToolID = string;
+
+/**
+ * Predefined constants for type ToolID.
+ * @namespace
+ */
+export const ToolID = {
+    ZZMI: "zzmi",
+    SRMI: "srmi",
+    GIMI: "gimi",
+    WWMI: "wwmi",
+};

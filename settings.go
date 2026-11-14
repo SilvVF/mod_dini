@@ -119,7 +119,7 @@ type SettingsStore struct {
 	actionSources map[string]string
 }
 
-func NewStore(db *bbolt.DB) (*SettingsStore, error) {
+func NewSettingsStore(db *bbolt.DB) (*SettingsStore, error) {
 	err := db.Update(func(tx *bbolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(SETTINGS_BUCKET)
 		return err
@@ -445,6 +445,10 @@ func (s Setting) validate() error {
 }
 
 // ---- constructors -----------------------------------------------------------
+func maybeJSON(v any) (json.RawMessage, error) {
+	b, err := json.Marshal(v)
+	return b, err
+}
 
 func mustJSON(v any) json.RawMessage {
 	b, err := json.Marshal(v)

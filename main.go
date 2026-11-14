@@ -25,7 +25,6 @@ func init() {
 	// Register a custom event whose associated data type is string.
 	// This is not required, but the binding generator will pick up registered events
 	// and provide a strongly typed JS/TS API for them.
-	application.RegisterEvent[string]("time")
 	application.RegisterEvent[ModSaved]("mod-update")
 	application.RegisterEvent[map[int]ModSaved]("mods-loaded")
 	application.RegisterEvent[DataProgress]("mod-download-progress")
@@ -44,12 +43,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-
-	settingsStore, err := NewStore(db)
-	if err != nil {
-		panic(err)
-	}
-
 	// Create a new Wails application by providing the necessary options.
 	// Variables 'Name' and 'Description' are for application metadata.
 	// 'Assets' configures the asset server with the 'FS' variable pointing to the frontend files.
@@ -69,14 +62,7 @@ func main() {
 		},
 	})
 
-	app.RegisterService(application.NewService(
-		&ModService{
-			app:      app,
-			gbApi:    GbApi{},
-			db:       db,
-			fs:       &FolderStore{db: db},
-			settings: settingsStore,
-		}))
+	app.RegisterService(application.NewService(NewModService(app, db)))
 
 	// Create a new window with the necessary options.
 	// 'Title' is the title of the window.

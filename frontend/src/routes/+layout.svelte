@@ -24,7 +24,6 @@
     setActiveTool,
     tools,
   } from "#lib/state/app.svelte.ts";
-  import { untrack } from "svelte";
   let { children, data }: LayoutProps = $props();
 
   const queryClient = new QueryClient();
@@ -34,11 +33,7 @@
 
   const settings = getSettingsContext();
   $effect(() => {
-    const active = settings.get("tool.active");
-
-    untrack(() => {
-      appState.activeTool = active?.value ?? "zzmi";
-    });
+    appState.activeTool = settings.get("tool.active")?.value;
   });
 
   const activeToolConfig = $derived(
