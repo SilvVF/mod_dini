@@ -28,8 +28,3 @@ export const ModsLoaded = "mods-loaded";
  */
 export const SettingUpdated = "setting-updated";
 
-/**
- * Name of the custom event "time".
- */
-export const Time = "time";
-

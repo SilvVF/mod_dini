@@ -40,10 +40,10 @@ type Sweeper struct {
 	tasks map[string]*sweepTask
 }
 
-func NewSweeper(ms *ModService) *Sweeper {
+func NewSweeper(ms *ModService, ctx context.Context) *Sweeper {
 	return &Sweeper{
 		ms:    ms,
-		ctx:   ms.app.Context(),
+		ctx:   ctx,
 		tasks: make(map[string]*sweepTask),
 	}
 }

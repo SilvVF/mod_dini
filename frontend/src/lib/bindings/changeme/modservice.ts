@@ -17,10 +17,6 @@ export function DefaultSettings(): $CancellablePromise<$models.Setting[] | null>
     return $Call.ByID(205736959);
 }
 
-export function DownloadMod(mod: $models.ModSaved): $CancellablePromise<void> {
-    return $Call.ByID(2641550483, mod);
-}
-
 export function EmitDownloadProgress(mod: $models.ModSaved, pkg: $models.Pack, total: number, progress: number): $CancellablePromise<boolean> {
     return $Call.ByID(2400628177, mod, pkg, total, progress);
 }
@@ -35,6 +31,10 @@ export function FolderConfig(): $CancellablePromise<{ [_ in $models.ToolID]?: $m
 
 export function GetKeyBinds(): $CancellablePromise<{ [_ in string]?: { [_ in string]?: $models.ModKeyBindPreset } | null } | null> {
     return $Call.ByID(167642374);
+}
+
+export function GetParsedData(): $CancellablePromise<$models.MeshData | null> {
+    return $Call.ByID(3187153310);
 }
 
 export function Initial(): $CancellablePromise<{ [_ in string]?: $models.ModSaved } | null> {
@@ -55,6 +55,10 @@ export function OpenKeybindsWindow(): $CancellablePromise<void> {
 
 export function Page(providerId: string, pageId: string): $CancellablePromise<$models.SubmissionPage> {
     return $Call.ByID(3964629098, providerId, pageId);
+}
+
+export function Remove(modId: string, deleteKeybinds: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3788860665, modId, deleteKeybinds);
 }
 
 export function Save(toolId: $models.ToolID, sub: $models.Submission, files: $models.SubmissionFile[] | null, selected: $models.Pack[] | null): $CancellablePromise<void> {

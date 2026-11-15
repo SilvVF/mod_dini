@@ -11,7 +11,7 @@
   const characters = $derived(
     compact(data.rootFolder[appState.activeTool].characters.characters ?? {}),
   );
-  const names = $derived.by(() => {
+  const localCharacterNames = $derived.by(() => {
     const nameMap: { [key: string]: string } = {};
     for (const folder of Object.values(characters)) {
       for (const [provider, categoryId] of Object.entries(folder.sources ?? {})) {
@@ -30,7 +30,7 @@
 
     return enabledMods.map((mod) => ({
       mod,
-      name: names[`${mod.submission.provider}:${mod.submission.category}`],
+      name: localCharacterNames[`${mod.submission.provider}:${mod.submission.category}`],
       presets: Object.values(data.keybinds[mod.id]),
     }));
   });

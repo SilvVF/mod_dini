@@ -37,7 +37,11 @@ func NewModService(app *application.App, db *bolt.DB) *ModService {
 	}
 
 	ms := &ModService{
-		settings: settingsStore,
+		settings:       settingsStore,
+		keybindsWindow: nil,
+		app:            app,
+		db:             db,
+		fs:             &FolderStore{db: db},
 		providers: ProviderRegistry{
 			"gamebanana": NewGameBanana(&GbApi{}),
 			"huihui":     &HuiHuiProvider{},
@@ -48,7 +52,6 @@ func NewModService(app *application.App, db *bolt.DB) *ModService {
 		db: ms.db,
 		ms: ms,
 	}
-	ms.sweeper = NewSweeper(ms)
 
 	return ms
 }
@@ -70,6 +73,8 @@ func (ms *ModService) tryLockMod(modID string) (unlock func(), ok bool) {
 }
 
 func (ms *ModService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	ms.sweeper = NewSweeper(ms, ctx)
+
 	if err := ms.settings.Sync(ms.DefaultSettings()); err != nil {
 		panic(err)
 	}
@@ -397,6 +402,40 @@ func expectedPath(paths packPaths, state StorageState) string {
 	default:
 		panic(fmt.Sprintf("unexpected main.StorageState: %#v", state))
 	}
+}
+
+func (ms *ModService) Remove(modId string, deleteKeybinds bool) error {
+	return ms.db.Update(func(tx *bolt.Tx) error {
+
+		mod, err := getModTx(tx, modId)
+		if err != nil {
+			return err
+		}
+
+		toolDir, err := ms.toolRoot(mod.ToolId)
+		if err != nil {
+			return err
+		}
+
+		modDir := filepath.Join(toolDir, mod.Submission.Provider, mod.Submission.SubmissionID)
+		if err := os.RemoveAll(modDir); err != nil {
+			return err
+		}
+
+		err = tx.Bucket(DL_BUCKET).Delete([]byte(mod.ID))
+		if err != nil {
+			return err
+		}
+
+		if deleteKeybinds {
+			keybinds := tx.Bucket(KEYBIND_BUCKET)
+			if keybinds != nil {
+				keybinds.DeleteBucket([]byte(mod.ID))
+			}
+		}
+
+		return nil
+	})
 }
 
 func (ms *ModService) Save(toolId ToolID, sub Submission, files []SubmissionFile, selected []Pack) error {

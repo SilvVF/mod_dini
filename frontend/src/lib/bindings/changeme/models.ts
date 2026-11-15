@@ -133,6 +133,18 @@ export interface ManifestEntry {
     "hash": string;
 }
 
+export interface MeshData {
+    "vertexCount": number;
+    "indices": number[] | null;
+    "positions": number[] | null;
+    "normals": number[] | null;
+    "tangents": number[] | null;
+    "blendWeights": number[] | null;
+    "blendIndices": number[] | null;
+    "colors": number[] | null;
+    "uvs": number[] | null;
+}
+
 export interface ModKeyBind {
     "section": string;
     "key": string;
@@ -155,6 +167,12 @@ export interface ModKeyBindPreset {
 export interface ModSaved {
     "id": string;
     "toolId": ToolID;
+    "characterId": string;
+
+    /**
+     * "category", "hash" or "user"
+     */
+    "characterSource": string;
     "submission": Submission;
     "submissionFiles": SubmissionFile[] | null;
     "packages": Pack[] | null;
