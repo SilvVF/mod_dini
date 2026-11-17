@@ -3,6 +3,9 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as modpreview$0 from "./modpreview/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as json$0 from "../encoding/json/models.js";
 
 /**
@@ -133,18 +136,6 @@ export interface ManifestEntry {
     "hash": string;
 }
 
-export interface MeshData {
-    "vertexCount": number;
-    "indices": number[] | null;
-    "positions": number[] | null;
-    "normals": number[] | null;
-    "tangents": number[] | null;
-    "blendWeights": number[] | null;
-    "blendIndices": number[] | null;
-    "colors": number[] | null;
-    "uvs": number[] | null;
-}
-
 export interface ModKeyBind {
     "section": string;
     "key": string;
@@ -229,6 +220,12 @@ export interface Pack {
      * compressed size on disk; 0 while no archive exists
      */
     "archiveSize": number;
+}
+
+export interface PackPreview {
+    "payload": modpreview$0.ViewerPayload | null;
+    "mod": ModSaved;
+    "pack": Pack;
 }
 
 export interface RootFolder {

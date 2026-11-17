@@ -6,4 +6,5 @@ import (
 
 func TestTextureParse(t *testing.T) {
 
+	t.Fail()
 }

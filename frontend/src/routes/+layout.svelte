@@ -80,11 +80,6 @@
           <Settings class="size-4" />
         </Button>
       </a>
-
-       <Button variant="ghost" size="icon" href="/model">
-          <Box class="size-4" />
-        </Button>
-
       <Button variant="ghost" size="icon" href="/source/gamebanana/30305">
         <Globe class="size-4" />
       </Button>

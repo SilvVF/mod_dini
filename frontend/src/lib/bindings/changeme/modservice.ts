@@ -33,10 +33,6 @@ export function GetKeyBinds(): $CancellablePromise<{ [_ in string]?: { [_ in str
     return $Call.ByID(167642374);
 }
 
-export function GetParsedData(): $CancellablePromise<$models.MeshData | null> {
-    return $Call.ByID(3187153310);
-}
-
 export function Initial(): $CancellablePromise<{ [_ in string]?: $models.ModSaved } | null> {
     return $Call.ByID(2814493079);
 }
@@ -55,6 +51,10 @@ export function OpenKeybindsWindow(): $CancellablePromise<void> {
 
 export function Page(providerId: string, pageId: string): $CancellablePromise<$models.SubmissionPage> {
     return $Call.ByID(3964629098, providerId, pageId);
+}
+
+export function PreviewPack(modID: string, packID: string): $CancellablePromise<$models.PackPreview> {
+    return $Call.ByID(3142355294, modID, packID);
 }
 
 export function Remove(modId: string, deleteKeybinds: boolean): $CancellablePromise<void> {

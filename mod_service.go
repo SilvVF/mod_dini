@@ -1,6 +1,7 @@
 package main
 
 import (
+	"changeme/modpreview"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,9 +29,10 @@ type ModService struct {
 	sweeper        *Sweeper
 	settings       *SettingsStore
 	modLocks       sync.Map
+	previewUrl     string
 }
 
-func NewModService(app *application.App, db *bolt.DB) *ModService {
+func NewModService(app *application.App, db *bolt.DB, previewUrl string) *ModService {
 	settingsStore, err := NewSettingsStore(db)
 	if err != nil {
 		panic(err)
@@ -46,6 +48,7 @@ func NewModService(app *application.App, db *bolt.DB) *ModService {
 			"gamebanana": NewGameBanana(&GbApi{}),
 			"huihui":     &HuiHuiProvider{},
 		},
+		previewUrl: previewUrl,
 	}
 
 	ms.ks = &KeybindStore{
@@ -106,6 +109,37 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 	go ms.sweeper.Run()
 
 	return nil
+}
+
+type PackPreview struct {
+	Payload *modpreview.ViewerPayload `json:"payload"`
+	Mod     ModSaved                  `json:"mod"`
+	Pack    Pack                      `json:"pack"`
+}
+
+func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
+
+	mod, err := ms.getMod(modID)
+	if err != nil {
+		return PackPreview{}, err
+	}
+
+	pack, _, ok := mod.GetPackage(packID)
+	if !ok {
+		return PackPreview{}, err
+	}
+	paths, err := ms.packPaths(mod, pack)
+	if err != nil {
+		return PackPreview{}, err
+	}
+
+	payload, err := modpreview.ParseMod(paths.active, nil, nil)
+
+	return PackPreview{
+		Payload: payload,
+		Mod:     mod,
+		Pack:    pack,
+	}, err
 }
 
 func (ms *ModService) OpenKeybindsWindow() {

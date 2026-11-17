@@ -2,7 +2,7 @@
   import { Card } from "#lib/components/ui/card/index.ts";
   import { Button } from "#lib/components/ui/button/index.ts";
   import { Switch } from "#lib/components/ui/switch/index.ts";
-  import { Settings, TrashIcon } from "@lucide/svelte/icons";
+  import { Box, Settings, TrashIcon } from "@lucide/svelte/icons";
 
   import type {
     CharacterFolder,
@@ -87,6 +87,9 @@
           aria-label="Delete mod"
         >
           <TrashIcon class="size-4" />
+        </Button>
+          <Button variant="ghost" size="icon" href={`/model/${item.local.id}/${item.local.packages?.at(0)?.id}`}>
+          <Box class="size-4" />
         </Button>
       </div>
 
