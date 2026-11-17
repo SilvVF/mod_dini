@@ -3,9 +3,8 @@ package modpreview
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"fmt"
 	"math"
-	"os"
+	"slices"
 	"sort"
 )
 
@@ -14,24 +13,6 @@ type CompactedMesh struct {
 	UVs       []float32
 	Indices   []uint32
 	HasUVs    bool
-}
-
-// ReadBuffer reads a binary buffer file with size validation.
-func ReadBuffer(path string) ([]byte, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-
-	if info.Size() > MaxBufferFileBytes {
-		return nil, fmt.Errorf(
-			"buffer file too large: %d MiB (limit %d MiB)",
-			info.Size()/(1024*1024),
-			MaxBufferFileBytes/(1024*1024),
-		)
-	}
-
-	return os.ReadFile(path)
 }
 
 // ReadPositions reads float32 XYZ positions from a vertex buffer.
@@ -349,9 +330,7 @@ func CompactVertices(
 
 	// Collect unique referenced vertices.
 	used := append([]uint32(nil), validAdjusted...)
-	sort.Slice(used, func(i, j int) bool {
-		return used[i] < used[j]
-	})
+	slices.Sort(used)
 
 	unique := used[:0]
 	for _, index := range used {

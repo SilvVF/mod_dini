@@ -31,7 +31,7 @@
   let selectedItemId = $state<string | undefined>(undefined);
   const toolId = $derived(appState.activeTool);
   const rootFolder = $derived(data.rootFolder[toolId]);
-  const subfoldersRecord = $derived(compact(rootFolder.subfolders ?? {}));
+  const subfoldersRecord = $derived(compact(rootFolder?.subfolders ?? {}));
   const charactersRecord = $derived(
     compact(rootFolder.characters.characters ?? {}),
   );

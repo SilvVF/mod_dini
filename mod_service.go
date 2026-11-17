@@ -32,7 +32,7 @@ type ModService struct {
 	previewUrl     string
 }
 
-func NewModService(app *application.App, db *bolt.DB, previewUrl string) *ModService {
+func NewModService(app *application.App, db *bolt.DB) *ModService {
 	settingsStore, err := NewSettingsStore(db)
 	if err != nil {
 		panic(err)
@@ -48,7 +48,7 @@ func NewModService(app *application.App, db *bolt.DB, previewUrl string) *ModSer
 			"gamebanana": NewGameBanana(&GbApi{}),
 			"huihui":     &HuiHuiProvider{},
 		},
-		previewUrl: previewUrl,
+		previewUrl: "",
 	}
 
 	ms.ks = &KeybindStore{
@@ -133,7 +133,28 @@ func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 		return PackPreview{}, err
 	}
 
-	payload, err := modpreview.ParseMod(paths.active, nil, nil)
+	baseModelMods := []modpreview.BaseModelMod{}
+	mods, err := ms.Initial()
+	for _, m := range mods {
+		if (m.CharacterId == mod.CharacterId && m.CharacterId != "") || (m.Submission.Category == mod.Submission.Category && m.Submission.Category != "") {
+			for _, p := range m.Packs {
+				paths, err := ms.packPaths(m, p)
+				if err != nil {
+					continue
+				}
+				baseModelMods = append(baseModelMods, modpreview.BaseModelMod{
+					Provider: m.Submission.Provider,
+					ModID:    modID,
+					FileID:   p.FileID,
+					Name:     p.Name,
+					Path:     expectedPath(paths, p.Storage),
+				})
+			}
+		}
+	}
+
+	log.Println("base model mods: ", baseModelMods)
+	payload, err := modpreview.ParseMod(paths.active, nil, baseModelMods, nil)
 
 	return PackPreview{
 		Payload: payload,
@@ -518,9 +539,11 @@ func (ms *ModService) Save(toolId ToolID, sub Submission, files []SubmissionFile
 		})
 	}
 
-	if _, charID, _, ok := ms.resolveCharacter(sub.Provider, sub.Category); ok {
-		mod.CharacterId = charID
-		mod.CharacterSource = "category"
+	tool, local, hero, ok := ms.resolveCharacter(sub.Provider, sub.Category)
+	if ok {
+		mod.ToolId = tool
+		mod.CharacterId = local
+		mod.Submission.Hero = &hero
 	}
 
 	data, err := json.Marshal(mod)
@@ -551,10 +574,10 @@ func (ms *ModService) resolveCharacter(providerID, category string) (toolID, loc
 		return "", "", "", false
 	}
 
-	for _, folder := range cfg {
-		for charID, c := range folder.Characters.Characters {
-			if c.Sources[providerID] == category {
-				return folder.ID, charID, c.Name, true
+	for _, root := range cfg {
+		for charID, folder := range root.Characters.Characters {
+			if folder.Sources[providerID] == category {
+				return root.ID, charID, folder.Name, true
 			}
 		}
 	}

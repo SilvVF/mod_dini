@@ -16,15 +16,17 @@ import (
 func ParseMod(
 	modPath string,
 	baseModelFolder *string,
+	mods []BaseModelMod,
 	quality *string,
 ) (*ViewerPayload, error) {
-	return ParseModWithContext(context.Background(), modPath, baseModelFolder, quality)
+	return ParseModWithContext(context.Background(), modPath, baseModelFolder, mods, quality)
 }
 
 func ParseModWithContext(
 	ctx context.Context,
 	modPath string,
 	baseModelFolder *string,
+	mods []BaseModelMod,
 	quality *string,
 ) (*ViewerPayload, error) {
 	if err := ctx.Err(); err != nil {
@@ -67,7 +69,7 @@ func ParseModWithContext(
 
 	if isRetexture {
 		clues = ExtractModClues(modDir, allSections)
-		candidates, _ = DiscoverBaseModelCandidates(modDir, allSections)
+		candidates, _ = DiscoverBaseModelCandidates(modDir, allSections, mods)
 	}
 
 	chosenBasePath := resolveBaseModelPath(
@@ -408,61 +410,35 @@ func convertGroupTextures(
 		uri  string
 	}
 
+	fileMap := make(map[string]string, len(paths))
 	workerCount := min(runtime.GOMAXPROCS(0), len(paths))
-	if workerCount == 0 {
-		return map[string]string{}, map[string]string{}, nil
-	}
 
-	jobs := make(chan string)
-	results := make(chan result, len(paths))
+	var (
+		workers sync.WaitGroup
+		mu      sync.Mutex
+	)
 
-	var workers sync.WaitGroup
-
-	for range workerCount {
-		workers.Add(1)
-
-		go func() {
-			defer workers.Done()
-
-			for path := range jobs {
+	for i := range workerCount {
+		workers.Go(func() {
+			for j := i; j < len(paths); j += workerCount {
 				if ctx.Err() != nil {
-					continue
+					return
 				}
 
+				path := paths[j]
 				uri := ConvertTextureToDataURI(path, maxTextureDimension)
 				if uri == "" {
 					continue
 				}
 
-				results <- result{
-					path: path,
-					uri:  uri,
-				}
+				mu.Lock()
+				fileMap[path] = uri
+				mu.Unlock()
 			}
-		}()
+		})
 	}
 
-	go func() {
-		defer close(jobs)
-
-		for _, path := range paths {
-			if ctx.Err() != nil {
-				return
-			}
-			jobs <- path
-		}
-	}()
-
-	go func() {
-		workers.Wait()
-		close(results)
-	}()
-
-	fileMap := make(map[string]string, len(paths))
-
-	for result := range results {
-		fileMap[result.path] = result.uri
-	}
+	workers.Wait()
 
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -489,7 +465,7 @@ func buildMeshes(
 			return data, nil
 		}
 
-		data, err := ReadBuffer(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
@@ -620,7 +596,7 @@ func buildMeshes(
 				NormalKey:   normalKey,
 				LightKey:    lightKey,
 				MaterialKey: materialKey,
-				Component:   stringPointer(group.Name),
+				Component:   stringPtr(group.Name),
 				Condition:   draw.Condition,
 			})
 		}
@@ -668,10 +644,6 @@ func encodeOptionalF32Array(values []float32, hasValues bool) *string {
 
 	encoded := EncodeF32Array(values)
 	return &encoded
-}
-
-func stringPointer(value string) *string {
-	return &value
 }
 
 func isFile(path string) bool {

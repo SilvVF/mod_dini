@@ -1,41 +1,51 @@
 package modpreview
 
 import (
-	"archive/zip"
+	"context"
 	"fmt"
-	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/mholt/archives"
 )
+
+// BaseModelMod represents a mod supplied by the database.
+//
+// Path must point to either the mod directory or its archive.
+type BaseModelMod struct {
+	Provider string
+	ModID    string
+	FileID   string
+	Name     string
+	Path     string
+}
 
 // ExtractModClues extracts information that may help identify the base model
 // used by a retexture mod.
 func ExtractModClues(modDir string, sections []IniSection) []string {
 	var clues []string
 
-	// 1. Read top-level .txt readme files.
+	// Read top-level TXT readme files.
 	entries, err := os.ReadDir(modDir)
 	if err == nil {
 		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(
-				strings.ToLower(entry.Name()),
-				".txt",
-			) {
+			if entry.IsDir() ||
+				!strings.EqualFold(filepath.Ext(entry.Name()), ".txt") {
 				continue
 			}
 
-			path := filepath.Join(modDir, entry.Name())
-			content, err := os.ReadFile(path)
+			content, err := os.ReadFile(filepath.Join(modDir, entry.Name()))
 			if err != nil {
 				continue
 			}
 
-			lines := strings.Split(string(content), "\n")
 			lineCount := 0
 
-			for _, line := range lines {
+			for _, line := range strings.Split(string(content), "\n") {
 				line = strings.TrimSpace(line)
 
 				if line == "" ||
@@ -60,17 +70,19 @@ func ExtractModClues(modDir string, sections []IniSection) []string {
 		}
 	}
 
-	// 2. Check INI CreditInfo or Author data.
+	// Check INI credit information.
 	for _, section := range sections {
 		for _, entry := range section.Entries {
-			if entry.Key != "data" {
+			if !strings.EqualFold(entry.Key, "data") {
 				continue
 			}
 
-			if !strings.Contains(entry.Val, "Created by") &&
-				!strings.Contains(entry.Val, "Credit") &&
-				!strings.Contains(entry.Val, "Author") &&
-				!strings.Contains(entry.Val, "VoidHero") {
+			value := strings.ToLower(entry.Val)
+
+			if !strings.Contains(value, "created by") &&
+				!strings.Contains(value, "credit") &&
+				!strings.Contains(value, "author") &&
+				!strings.Contains(value, "voidhero") {
 				continue
 			}
 
@@ -80,6 +92,7 @@ func ExtractModClues(modDir string, sections []IniSection) []string {
 			}
 
 			alreadyExists := false
+
 			for _, clue := range clues {
 				if strings.Contains(clue, clean) {
 					alreadyExists = true
@@ -93,32 +106,8 @@ func ExtractModClues(modDir string, sections []IniSection) []string {
 		}
 	}
 
-	// 3. Collect referenced mesh buffers.
-	referencedBuffers := make([]string, 0)
-
-	for _, section := range sections {
-		if !strings.HasPrefix(
-			strings.ToLower(section.Name),
-			"resource",
-		) {
-			continue
-		}
-
-		for _, entry := range section.Entries {
-			if entry.Key != "filename" {
-				continue
-			}
-
-			if !strings.HasSuffix(entry.Val, ".buf") &&
-				!strings.HasSuffix(entry.Val, ".ib") {
-				continue
-			}
-
-			if !containsString(referencedBuffers, entry.Val) {
-				referencedBuffers = append(referencedBuffers, entry.Val)
-			}
-		}
-	}
+	// Collect referenced mesh buffers.
+	referencedBuffers := collectRequiredBuffers(sections)
 
 	if len(referencedBuffers) > 0 {
 		clues = append(
@@ -127,158 +116,81 @@ func ExtractModClues(modDir string, sections []IniSection) []string {
 		)
 	}
 
-	// 4. Character category from the parent directory.
-	parent := filepath.Dir(filepath.Clean(modDir))
-	parentName := filepath.Base(parent)
-
-	if parentName != "." && parentName != string(filepath.Separator) && parentName != "" {
-		clues = append(clues, "Character Category: "+parentName)
-	}
-
 	return clues
 }
 
-// DiscoverBaseModelCandidates searches sibling mod folders and other
-// categories belonging to the same character for matching mesh buffers.
+// DiscoverBaseModelCandidates searches the supplied mods for matching
+// mesh buffers.
+//
+// mods should contain all mods belonging to the same category, retrieved
+// from the database.
+//
+// Each mod can point to either an extracted directory or an archive.
+//
+// FolderName contains the candidate's full local path.
 func DiscoverBaseModelCandidates(
 	modDir string,
 	sections []IniSection,
+	mods []BaseModelMod,
 ) ([]BaseModelCandidate, []string) {
-	var candidates []BaseModelCandidate
-	var requiredBuffers []string
+	requiredBuffers := collectRequiredBuffers(sections)
 
-	// Collect requested .buf and .ib filenames.
-	for _, section := range sections {
-		if !strings.HasPrefix(
-			strings.ToLower(section.Name),
-			"resource",
-		) {
+	var candidates []BaseModelCandidate
+
+	if len(requiredBuffers) == 0 {
+		return candidates, requiredBuffers
+	}
+
+	modDir = filepath.Clean(modDir)
+
+	for _, mod := range mods {
+		mod.Path = strings.TrimSpace(mod.Path)
+
+		if mod.Path == "" {
 			continue
 		}
 
-		for _, entry := range section.Entries {
-			if entry.Key != "filename" {
-				continue
-			}
-
-			if !strings.HasSuffix(entry.Val, ".buf") &&
-				!strings.HasSuffix(entry.Val, ".ib") {
-				continue
-			}
-
-			if !containsString(requiredBuffers, entry.Val) {
-				requiredBuffers = append(requiredBuffers, entry.Val)
-			}
+		// Exclude the currently selected mod.
+		if samePath(mod.Path, modDir) {
+			continue
 		}
-	}
 
-	parent := filepath.Dir(filepath.Clean(modDir))
-	if parent == "." || parent == string(filepath.Separator) {
-		return candidates, requiredBuffers
-	}
+		candidateBuffers := collectBufferNames(mod.Path)
+		if len(candidateBuffers) == 0 {
+			continue
+		}
 
-	// 1. Search sibling mod folders.
-	entries, err := os.ReadDir(parent)
-	if err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-
-			siblingPath := filepath.Join(parent, entry.Name())
-			if samePath(siblingPath, modDir) {
-				continue
-			}
-
-			folderName := entry.Name()
-			displayName := cleanDisabledPrefix(folderName)
-
-			siblingBuffers := collectBufferNames(siblingPath)
-			if len(siblingBuffers) == 0 {
-				continue
-			}
-
-			candidate := buildBaseModelCandidate(
-				folderName,
+		displayName := strings.TrimSpace(mod.Name)
+		if displayName == "" {
+			displayName = filepath.Base(mod.Path)
+			displayName = strings.TrimSuffix(
 				displayName,
-				siblingBuffers,
-				requiredBuffers,
-				"",
+				filepath.Ext(displayName),
 			)
-
-			candidates = append(candidates, candidate)
 		}
-	}
 
-	// 2. Search other skin categories belonging to the same character.
-	grandparent := filepath.Dir(parent)
-	if grandparent == parent || grandparent == "." {
-		sortBaseModelCandidates(candidates)
-		return candidates, requiredBuffers
-	}
+		displayName = cleanDisabledPrefix(displayName)
 
-	parentFolderName := filepath.Base(parent)
-	charPrefix := strings.TrimSpace(
-		strings.SplitN(parentFolderName, " - ", 2)[0],
-	)
+		source := mod.Provider
 
-	categoryEntries, err := os.ReadDir(grandparent)
-	if err == nil {
-		for _, categoryEntry := range categoryEntries {
-			if !categoryEntry.IsDir() {
-				continue
-			}
-
-			categoryPath := filepath.Join(grandparent, categoryEntry.Name())
-			if samePath(categoryPath, parent) {
-				continue
-			}
-
-			categoryName := categoryEntry.Name()
-
-			if !strings.HasPrefix(
-				strings.ToLower(categoryName),
-				strings.ToLower(charPrefix),
-			) {
-				continue
-			}
-
-			otherModEntries, err := os.ReadDir(categoryPath)
-			if err != nil {
-				continue
-			}
-
-			for _, otherModEntry := range otherModEntries {
-				if !otherModEntry.IsDir() {
-					continue
-				}
-
-				rawModName := otherModEntry.Name()
-				otherModPath := filepath.Join(categoryPath, rawModName)
-
-				otherBuffers := collectBufferNames(otherModPath)
-				if len(otherBuffers) == 0 {
-					continue
-				}
-
-				folderName := filepath.Join(categoryName, rawModName)
-				displayName := fmt.Sprintf(
-					"%s (%s)",
-					cleanDisabledPrefix(rawModName),
-					categoryName,
-				)
-
-				candidate := buildBaseModelCandidate(
-					folderName,
-					displayName,
-					otherBuffers,
-					requiredBuffers,
-					categoryName,
-				)
-
-				candidates = append(candidates, candidate)
-			}
+		if mod.ModID != "" {
+			source += " mod " + mod.ModID
 		}
+
+		if mod.FileID != "" {
+			source += " file " + mod.FileID
+		}
+
+		candidates = append(
+			candidates,
+			buildBaseModelCandidate(
+				mod.Path,
+				displayName,
+				candidateBuffers,
+				requiredBuffers,
+				source,
+			),
+		)
 	}
 
 	sortBaseModelCandidates(candidates)
@@ -286,25 +198,46 @@ func DiscoverBaseModelCandidates(
 	return candidates, requiredBuffers
 }
 
+// collectRequiredBuffers extracts unique .buf and .ib references from INI sections.
+func collectRequiredBuffers(sections []IniSection) []string {
+	var buffers []string
+
+	for _, section := range sections {
+		if !strings.HasPrefix(strings.ToLower(section.Name), "resource") {
+			continue
+		}
+
+		for _, entry := range section.Entries {
+			if !strings.EqualFold(entry.Key, "filename") ||
+				!isMeshBufferFile(entry.Val) {
+				continue
+			}
+
+			if !containsStringFold(buffers, entry.Val) {
+				buffers = append(buffers, entry.Val)
+			}
+		}
+	}
+
+	return buffers
+}
+
 // buildBaseModelCandidate evaluates how many requested buffers exist in
-// a candidate mod folder.
+// a candidate mod.
 func buildBaseModelCandidate(
 	folderName string,
 	displayName string,
 	candidateBuffers []string,
 	requiredBuffers []string,
-	sourceCategory string,
+	source string,
 ) BaseModelCandidate {
 	matchedCount := 0
 	matchedNames := make([]string, 0)
 
 	for _, required := range requiredBuffers {
-		for _, candidate := range candidateBuffers {
-			if strings.EqualFold(candidate, required) {
-				matchedCount++
-				matchedNames = append(matchedNames, required)
-				break
-			}
+		if containsStringFold(candidateBuffers, required) {
+			matchedCount++
+			matchedNames = append(matchedNames, required)
 		}
 	}
 
@@ -313,55 +246,34 @@ func buildBaseModelCandidate(
 	confidence := "low"
 	var matchDetails string
 
-	if totalRequired > 0 && matchedCount == totalRequired {
+	switch {
+	case totalRequired > 0 && matchedCount == totalRequired:
 		confidence = "exact"
 
-		if sourceCategory != "" {
-			matchDetails = fmt.Sprintf(
-				"Exact Match from %s: %d/%d required mesh buffers found",
-				sourceCategory,
-				matchedCount,
-				totalRequired,
-			)
-		} else {
-			matchDetails = fmt.Sprintf(
-				"Exact Match: %d/%d required mesh buffers found",
-				matchedCount,
-				totalRequired,
-			)
-		}
-	} else if matchedCount > 0 {
+		matchDetails = fmt.Sprintf(
+			"Exact Match from %s: %d/%d required mesh buffers found",
+			source,
+			matchedCount,
+			totalRequired,
+		)
+
+	case matchedCount > 0:
 		confidence = "partial"
 
-		if sourceCategory != "" {
-			matchDetails = fmt.Sprintf(
-				"Partial Match from %s: %d/%d buffers matched (%s)",
-				sourceCategory,
-				matchedCount,
-				totalRequired,
-				strings.Join(matchedNames, ", "),
-			)
-		} else {
-			matchDetails = fmt.Sprintf(
-				"Partial Match: %d/%d buffers matched (%s)",
-				matchedCount,
-				totalRequired,
-				strings.Join(matchedNames, ", "),
-			)
-		}
-	} else {
-		if sourceCategory != "" {
-			matchDetails = fmt.Sprintf(
-				"From %s: Contains %d 3D mesh buffers",
-				sourceCategory,
-				len(candidateBuffers),
-			)
-		} else {
-			matchDetails = fmt.Sprintf(
-				"Contains %d 3D mesh buffers (unmatched filenames)",
-				len(candidateBuffers),
-			)
-		}
+		matchDetails = fmt.Sprintf(
+			"Partial Match from %s: %d/%d buffers matched (%s)",
+			source,
+			matchedCount,
+			totalRequired,
+			strings.Join(matchedNames, ", "),
+		)
+
+	default:
+		matchDetails = fmt.Sprintf(
+			"From %s: Contains %d 3D mesh buffers",
+			source,
+			len(candidateBuffers),
+		)
 	}
 
 	return BaseModelCandidate{
@@ -374,60 +286,71 @@ func buildBaseModelCandidate(
 	}
 }
 
-// collectBufferNames collects .buf and .ib files from a directory and
-// its immediate subdirectories.
-func collectBufferNames(dir string) []string {
-	var buffers []string
-
-	entries, err := os.ReadDir(dir)
+// collectBufferNames collects .buf and .ib files from a directory or archive.
+//
+// Archives are inspected through archives.FileSystem without extracting them.
+func collectBufferNames(source string) []string {
+	fsys, err := archives.FileSystem(context.Background(), source, nil)
 	if err != nil {
-		return buffers
+		return nil
 	}
 
-	for _, entry := range entries {
-		path := filepath.Join(dir, entry.Name())
+	var buffers []string
 
-		if entry.IsDir() {
-			nestedEntries, err := os.ReadDir(path)
-			if err != nil {
-				continue
-			}
-
-			for _, nested := range nestedEntries {
-				if nested.IsDir() {
-					continue
-				}
-
-				if isMeshBufferFile(nested.Name()) {
-					buffers = append(buffers, nested.Name())
-				}
-			}
-
-			continue
+	err = fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
 		}
 
-		if isMeshBufferFile(entry.Name()) {
-			buffers = append(buffers, entry.Name())
+		if entry.IsDir() || !isMeshBufferFile(entry.Name()) {
+			return nil
 		}
+
+		buffer := path.Base(name)
+
+		if !containsStringFold(buffers, buffer) {
+			buffers = append(buffers, buffer)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return buffers
 	}
 
 	return buffers
 }
 
 func isMeshBufferFile(name string) bool {
-	return strings.HasSuffix(name, ".buf") ||
-		strings.HasSuffix(name, ".ib")
+	ext := strings.ToLower(filepath.Ext(name))
+	return ext == ".buf" || ext == ".ib"
 }
 
 func cleanDisabledPrefix(name string) string {
-	name = strings.TrimPrefix(name, "DISABLED ")
-	name = strings.TrimPrefix(name, "DISABLED_")
+	for _, prefix := range []string{"DISABLED ", "DISABLED_"} {
+		if len(name) >= len(prefix) &&
+			strings.EqualFold(name[:len(prefix)], prefix) {
+			return name[len(prefix):]
+		}
+	}
+
 	return name
 }
 
 func containsString(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsStringFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(value, target) {
 			return true
 		}
 	}
@@ -464,9 +387,19 @@ func sortBaseModelCandidates(candidates []BaseModelCandidate) {
 	}
 
 	isEnabled := func(name string) bool {
-		baseName := filepath.Base(name)
-		return !strings.HasPrefix(baseName, "DISABLED ") &&
-			!strings.HasPrefix(baseName, "DISABLED_")
+		for _, part := range strings.FieldsFunc(
+			filepath.ToSlash(name),
+			func(r rune) bool { return r == '/' },
+		) {
+			upper := strings.ToUpper(part)
+
+			if strings.HasPrefix(upper, "DISABLED ") ||
+				strings.HasPrefix(upper, "DISABLED_") {
+				return false
+			}
+		}
+
+		return true
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -483,160 +416,6 @@ func sortBaseModelCandidates(candidates []BaseModelCandidate) {
 
 		return a.MatchedBuffersCount > b.MatchedBuffersCount
 	})
-}
-
-// ArchiveOperations provides the project-specific extraction functions
-// needed for ZIP, RAR, and 7z archives.
-type ArchiveOperations struct {
-	ExtractZIP func(archivePath, destDir string) error
-
-	FindArchiveTool func(winrarPath string) (
-		toolPath string,
-		toolType string,
-		found bool,
-	)
-
-	ExtractRAROr7Z func(
-		archivePath string,
-		destDir string,
-		toolPath string,
-		toolType string,
-	) error
-}
-
-// ExtractArchiveGeneric extracts ZIP, RAR, or 7z archives.
-//
-// ZIP extraction can use the standard library when ExtractZIP is nil.
-// RAR and 7z extraction require the configured archive-tool callbacks.
-func ExtractArchiveGeneric(
-	archivePath string,
-	destDir string,
-	winrarPath string,
-	operations ArchiveOperations,
-) error {
-	ext := strings.ToLower(filepath.Ext(archivePath))
-	ext = strings.TrimPrefix(ext, ".")
-
-	switch ext {
-	case "zip":
-		if operations.ExtractZIP != nil {
-			return operations.ExtractZIP(archivePath, destDir)
-		}
-
-		return extractZIP(archivePath, destDir)
-
-	case "rar", "7z":
-		if operations.FindArchiveTool == nil ||
-			operations.ExtractRAROr7Z == nil {
-			return fmt.Errorf(
-				"WinRAR or 7-Zip is required to extract .%s files; configure it in Settings",
-				ext,
-			)
-		}
-
-		toolPath, toolType, found := operations.FindArchiveTool(winrarPath)
-		if !found {
-			return fmt.Errorf(
-				"WinRAR or 7-Zip is required to extract .%s files; configure it in Settings",
-				ext,
-			)
-		}
-
-		return operations.ExtractRAROr7Z(
-			archivePath,
-			destDir,
-			toolPath,
-			toolType,
-		)
-
-	default:
-		return fmt.Errorf("unsupported archive format: .%s", ext)
-	}
-}
-
-// extractZIP extracts a ZIP archive while preventing path traversal.
-func extractZIP(archivePath, destDir string) error {
-	reader, err := zip.OpenReader(archivePath)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-
-	root, err := filepath.Abs(destDir)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(root, 0755); err != nil {
-		return err
-	}
-
-	for _, file := range reader.File {
-		target := filepath.Join(root, filepath.FromSlash(file.Name))
-
-		targetAbs, err := filepath.Abs(target)
-		if err != nil {
-			return err
-		}
-
-		relative, err := filepath.Rel(root, targetAbs)
-		if err != nil {
-			return err
-		}
-
-		if relative == ".." ||
-			strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("invalid ZIP entry path: %s", file.Name)
-		}
-
-		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(targetAbs, 0755); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if err := os.MkdirAll(filepath.Dir(targetAbs), 0755); err != nil {
-			return err
-		}
-
-		if err := extractZIPFile(file, targetAbs); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func extractZIPFile(file *zip.File, target string) error {
-	source, err := file.Open()
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-
-	mode := file.Mode().Perm()
-	if mode == 0 {
-		mode = 0644
-	}
-
-	destination, err := os.OpenFile(
-		target,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		mode,
-	)
-	if err != nil {
-		return err
-	}
-
-	_, copyErr := io.Copy(destination, source)
-	closeErr := destination.Close()
-
-	if copyErr != nil {
-		return copyErr
-	}
-
-	return closeErr
 }
 
 // FindModRootInExtracted locates the directory containing the first INI
@@ -687,15 +466,15 @@ func findINIFiles(
 	}
 
 	for _, entry := range entries {
-		path := filepath.Join(dir, entry.Name())
+		filePath := filepath.Join(dir, entry.Name())
 
 		if entry.IsDir() {
-			findINIFiles(path, results, depth+1, maxDepth)
+			findINIFiles(filePath, results, depth+1, maxDepth)
 			continue
 		}
 
 		if strings.EqualFold(filepath.Ext(entry.Name()), ".ini") {
-			*results = append(*results, path)
+			*results = append(*results, filePath)
 		}
 	}
 }

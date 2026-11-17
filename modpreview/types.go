@@ -7,8 +7,6 @@ const (
 
 	IndexSizeU32 = 4
 	IndexSizeU16 = 2
-
-	MaxBufferFileBytes int64 = 512 * 1024 * 1024
 )
 
 type BaseModelCandidate struct {

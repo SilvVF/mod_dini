@@ -11,19 +11,10 @@ import (
 
 const maxResourceSearchDepth = 6
 
-func readINIToString(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-
-	return string(data), nil
-}
-
 // parseINISections parses an INI file and preserves conditional expressions.
 // readINIToString should handle UTF-8 and UTF-16 files.
 func parseINISections(path string) ([]IniSection, error) {
-	content, err := readINIToString(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +25,7 @@ func parseINISections(path string) ([]IniSection, error) {
 	var current *IniSection
 	var conditions []string
 
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(string(content), "\n") {
 		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
 
 		if line == "" ||
