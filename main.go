@@ -22,6 +22,7 @@ func init() {
 	// This is not required, but the binding generator will pick up registered events
 	// and provide a strongly typed JS/TS API for them.
 	application.RegisterEvent[ModSaved]("mod-update")
+	application.RegisterEvent[string]("mod-removed")
 	application.RegisterEvent[map[int]ModSaved]("mods-loaded")
 	application.RegisterEvent[DataProgress]("mod-download-progress")
 	application.RegisterEvent[Setting]("setting-updated")

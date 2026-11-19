@@ -228,17 +228,17 @@ func ReadIndices(
 	data []byte,
 	start int,
 	count int,
-	indexSize int,
+	indexSize IndexSize,
 ) []uint32 {
-	safeIndexSize := IndexSizeU16
-	if indexSize == IndexSizeU32 {
-		safeIndexSize = IndexSizeU32
-	}
-
-	if safeIndexSize <= 0 || start < 0 {
+	if indexSize != IndexSizeU16 && indexSize != IndexSizeU32 {
 		return nil
 	}
 
+	if start < 0 {
+		return nil
+	}
+
+	safeIndexSize := int(indexSize)
 	total := len(data) / safeIndexSize
 	if start >= total {
 		return nil
@@ -265,12 +265,15 @@ func ReadIndices(
 
 		var value uint32
 
-		if safeIndexSize == IndexSizeU16 {
-			value = uint32(binary.LittleEndian.Uint16(data[offset : offset+2]))
-		} else {
-			value = binary.LittleEndian.Uint32(data[offset : offset+4])
-		}
+		switch indexSize {
 
+		case IndexSizeU16:
+			value = uint32(binary.LittleEndian.Uint16(data[offset : offset+2]))
+		case IndexSizeU32:
+			value = binary.LittleEndian.Uint32(data[offset : offset+4])
+		default:
+			panic("unexpected modpreview.IndexSize")
+		}
 		indices = append(indices, value)
 	}
 

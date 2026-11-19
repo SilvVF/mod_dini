@@ -13,11 +13,19 @@ import (
 	"sync"
 )
 
+const (
+	QualityHigh Quality = "high"
+	QualityMed  Quality = "med"
+	QualityLow  Quality = ""
+)
+
+type Quality string
+
 func ParseMod(
 	modPath string,
 	baseModelFolder *string,
 	mods []BaseModelMod,
-	quality *string,
+	quality Quality,
 ) (*ViewerPayload, error) {
 	return ParseModWithContext(context.Background(), modPath, baseModelFolder, mods, quality)
 }
@@ -27,7 +35,7 @@ func ParseModWithContext(
 	modPath string,
 	baseModelFolder *string,
 	mods []BaseModelMod,
-	quality *string,
+	quality Quality,
 ) (*ViewerPayload, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -64,11 +72,9 @@ func ParseModWithContext(
 		allSections = append(allSections, sections...)
 	}
 
-	clues := []string{}
 	candidates := []BaseModelCandidate{}
 
 	if isRetexture {
-		clues = ExtractModClues(modDir, allSections)
 		candidates, _ = DiscoverBaseModelCandidates(modDir, allSections, mods)
 	}
 
@@ -124,7 +130,6 @@ func ParseModWithContext(
 				Textures:            map[string]string{},
 				IsRetexture:         true,
 				BaseModelSource:     nil,
-				Clues:               clues,
 				BaseModelCandidates: candidates,
 				Toggles:             toggles,
 				SuggestedTags:       computeSuggestedTags(true, nil, nil, toggles),
@@ -165,7 +170,6 @@ func ParseModWithContext(
 				Textures:            textures,
 				IsRetexture:         true,
 				BaseModelSource:     nil,
-				Clues:               clues,
 				BaseModelCandidates: candidates,
 				Toggles:             toggles,
 				SuggestedTags:       computeSuggestedTags(true, nil, textures, toggles),
@@ -189,7 +193,6 @@ func ParseModWithContext(
 		Textures:            textures,
 		IsRetexture:         isRetexture,
 		BaseModelSource:     baseModelSource,
-		Clues:               clues,
 		BaseModelCandidates: candidates,
 		Toggles:             toggles,
 		SuggestedTags:       suggestedTags,
@@ -356,15 +359,11 @@ func isDirectory(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-func textureQualitySettings(quality *string) (bool, uint32) {
-	if quality == nil {
-		return true, 512
-	}
-
-	q := strings.ToLower(strings.TrimSpace(*quality))
+func textureQualitySettings(quality Quality) (bool, uint32) {
+	q := strings.ToLower(strings.TrimSpace(string(quality)))
 
 	switch q {
-	case "high", "full":
+	case "high":
 		return false, 2048
 	case "balanced":
 		return false, 1024
@@ -412,20 +411,26 @@ func convertGroupTextures(
 
 	fileMap := make(map[string]string, len(paths))
 	workerCount := min(runtime.GOMAXPROCS(0), len(paths))
+	jobs := make(chan string, len(paths))
+
+	for _, path := range paths {
+		jobs <- path
+	}
+	close(jobs)
 
 	var (
 		workers sync.WaitGroup
 		mu      sync.Mutex
 	)
 
-	for i := range workerCount {
+	for range workerCount {
 		workers.Go(func() {
-			for j := i; j < len(paths); j += workerCount {
-				if ctx.Err() != nil {
+			for {
+				path, ok := <-jobs
+				if ctx.Err() != nil || !ok {
 					return
 				}
 
-				path := paths[j]
 				uri := ConvertTextureToDataURI(path, maxTextureDimension)
 				if uri == "" {
 					continue

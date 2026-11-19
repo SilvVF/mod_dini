@@ -394,7 +394,7 @@ func resourceIsTexcoordBuffer(record ResourceRecord) bool {
 	return resourceHasName(record, "texcoord")
 }
 
-func resourceIndexSize(record ResourceRecord) int {
+func resourceIndexSize(record ResourceRecord) IndexSize {
 	if record.Format != nil &&
 		strings.Contains(strings.ToUpper(*record.Format), "R16") {
 		return IndexSizeU16

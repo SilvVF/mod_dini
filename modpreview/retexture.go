@@ -24,101 +24,6 @@ type BaseModelMod struct {
 	Path     string
 }
 
-// ExtractModClues extracts information that may help identify the base model
-// used by a retexture mod.
-func ExtractModClues(modDir string, sections []IniSection) []string {
-	var clues []string
-
-	// Read top-level TXT readme files.
-	entries, err := os.ReadDir(modDir)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() ||
-				!strings.EqualFold(filepath.Ext(entry.Name()), ".txt") {
-				continue
-			}
-
-			content, err := os.ReadFile(filepath.Join(modDir, entry.Name()))
-			if err != nil {
-				continue
-			}
-
-			lineCount := 0
-
-			for _, line := range strings.Split(string(content), "\n") {
-				line = strings.TrimSpace(line)
-
-				if line == "" ||
-					strings.HasPrefix(line, "-") ||
-					strings.HasPrefix(line, "=") {
-					continue
-				}
-
-				if lineCount >= 4 {
-					break
-				}
-
-				lineCount++
-
-				if len(line) > 3 && len(line) < 120 {
-					clues = append(
-						clues,
-						fmt.Sprintf("%s: %s", entry.Name(), line),
-					)
-				}
-			}
-		}
-	}
-
-	// Check INI credit information.
-	for _, section := range sections {
-		for _, entry := range section.Entries {
-			if !strings.EqualFold(entry.Key, "data") {
-				continue
-			}
-
-			value := strings.ToLower(entry.Val)
-
-			if !strings.Contains(value, "created by") &&
-				!strings.Contains(value, "credit") &&
-				!strings.Contains(value, "author") &&
-				!strings.Contains(value, "voidhero") {
-				continue
-			}
-
-			clean := strings.TrimSpace(strings.Trim(entry.Val, `"`))
-			if clean == "" {
-				continue
-			}
-
-			alreadyExists := false
-
-			for _, clue := range clues {
-				if strings.Contains(clue, clean) {
-					alreadyExists = true
-					break
-				}
-			}
-
-			if !alreadyExists {
-				clues = append(clues, "INI Credit: "+clean)
-			}
-		}
-	}
-
-	// Collect referenced mesh buffers.
-	referencedBuffers := collectRequiredBuffers(sections)
-
-	if len(referencedBuffers) > 0 {
-		clues = append(
-			clues,
-			"Required Mesh Buffers: "+strings.Join(referencedBuffers, ", "),
-		)
-	}
-
-	return clues
-}
-
 // DiscoverBaseModelCandidates searches the supplied mods for matching
 // mesh buffers.
 //
@@ -171,16 +76,6 @@ func DiscoverBaseModelCandidates(
 
 		displayName = cleanDisabledPrefix(displayName)
 
-		source := mod.Provider
-
-		if mod.ModID != "" {
-			source += " mod " + mod.ModID
-		}
-
-		if mod.FileID != "" {
-			source += " file " + mod.FileID
-		}
-
 		candidates = append(
 			candidates,
 			buildBaseModelCandidate(
@@ -188,7 +83,6 @@ func DiscoverBaseModelCandidates(
 				displayName,
 				candidateBuffers,
 				requiredBuffers,
-				source,
 			),
 		)
 	}
@@ -229,7 +123,6 @@ func buildBaseModelCandidate(
 	displayName string,
 	candidateBuffers []string,
 	requiredBuffers []string,
-	source string,
 ) BaseModelCandidate {
 	matchedCount := 0
 	matchedNames := make([]string, 0)
@@ -252,7 +145,7 @@ func buildBaseModelCandidate(
 
 		matchDetails = fmt.Sprintf(
 			"Exact Match from %s: %d/%d required mesh buffers found",
-			source,
+			displayName,
 			matchedCount,
 			totalRequired,
 		)
@@ -262,7 +155,7 @@ func buildBaseModelCandidate(
 
 		matchDetails = fmt.Sprintf(
 			"Partial Match from %s: %d/%d buffers matched (%s)",
-			source,
+			displayName,
 			matchedCount,
 			totalRequired,
 			strings.Join(matchedNames, ", "),
@@ -271,7 +164,7 @@ func buildBaseModelCandidate(
 	default:
 		matchDetails = fmt.Sprintf(
 			"From %s: Contains %d 3D mesh buffers",
-			source,
+			displayName,
 			len(candidateBuffers),
 		)
 	}
@@ -287,8 +180,7 @@ func buildBaseModelCandidate(
 }
 
 // collectBufferNames collects .buf and .ib files from a directory or archive.
-//
-// Archives are inspected through archives.FileSystem without extracting them.
+// archives are inspected through archives.FileSystem without extracting them.
 func collectBufferNames(source string) []string {
 	fsys, err := archives.FileSystem(context.Background(), source, nil)
 	if err != nil {
@@ -336,16 +228,6 @@ func cleanDisabledPrefix(name string) string {
 	}
 
 	return name
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-
-	return false
 }
 
 func containsStringFold(values []string, target string) bool {

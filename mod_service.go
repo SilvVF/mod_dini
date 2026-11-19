@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -29,7 +30,6 @@ type ModService struct {
 	sweeper        *Sweeper
 	settings       *SettingsStore
 	modLocks       sync.Map
-	previewUrl     string
 }
 
 func NewModService(app *application.App, db *bolt.DB) *ModService {
@@ -48,7 +48,6 @@ func NewModService(app *application.App, db *bolt.DB) *ModService {
 			"gamebanana": NewGameBanana(&GbApi{}),
 			"huihui":     &HuiHuiProvider{},
 		},
-		previewUrl: "",
 	}
 
 	ms.ks = &KeybindStore{
@@ -119,24 +118,58 @@ type PackPreview struct {
 
 func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 
+	ms.sweeper.CancelAndWait(modID)
+
+	unlock := ms.lockMod(modID)
+	defer unlock()
+
 	mod, err := ms.getMod(modID)
 	if err != nil {
 		return PackPreview{}, err
 	}
 
 	pack, _, ok := mod.GetPackage(packID)
-	if !ok {
+	if !ok || !slices.Contains([]StorageState{StorageWarm, StorageActive}, pack.Storage) {
 		return PackPreview{}, err
 	}
+
 	paths, err := ms.packPaths(mod, pack)
 	if err != nil {
 		return PackPreview{}, err
 	}
 
+	baseModelMods := ms.getGaseModelMods(mod)
+
+	payload, err := modpreview.ParseMod(
+		expectedPath(paths, pack.Storage),
+		nil,
+		baseModelMods,
+		modpreview.QualityHigh,
+	)
+
+	return PackPreview{
+		Payload: payload,
+		Mod:     mod,
+		Pack:    pack,
+	}, err
+}
+
+func (ms *ModService) getGaseModelMods(mod ModSaved) []modpreview.BaseModelMod {
 	baseModelMods := []modpreview.BaseModelMod{}
 	mods, err := ms.Initial()
+	if err != nil {
+		return baseModelMods
+	}
+
 	for _, m := range mods {
-		if (m.CharacterId == mod.CharacterId && m.CharacterId != "") || (m.Submission.Category == mod.Submission.Category && m.Submission.Category != "") {
+
+		if m.ID == mod.ID {
+			continue
+		}
+
+		sameCharacter := (m.CharacterId == mod.CharacterId && m.CharacterId != "")
+		sameCategory := (m.Submission.Category == mod.Submission.Category && m.Submission.Category != "")
+		if sameCategory || sameCharacter {
 			for _, p := range m.Packs {
 				paths, err := ms.packPaths(m, p)
 				if err != nil {
@@ -144,7 +177,7 @@ func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 				}
 				baseModelMods = append(baseModelMods, modpreview.BaseModelMod{
 					Provider: m.Submission.Provider,
-					ModID:    modID,
+					ModID:    mod.ID,
 					FileID:   p.FileID,
 					Name:     p.Name,
 					Path:     expectedPath(paths, p.Storage),
@@ -154,13 +187,8 @@ func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 	}
 
 	log.Println("base model mods: ", baseModelMods)
-	payload, err := modpreview.ParseMod(paths.active, nil, baseModelMods, nil)
 
-	return PackPreview{
-		Payload: payload,
-		Mod:     mod,
-		Pack:    pack,
-	}, err
+	return baseModelMods
 }
 
 func (ms *ModService) OpenKeybindsWindow() {
@@ -460,18 +488,21 @@ func expectedPath(paths packPaths, state StorageState) string {
 }
 
 func (ms *ModService) Remove(modId string, deleteKeybinds bool) error {
-	return ms.db.Update(func(tx *bolt.Tx) error {
 
-		mod, err := getModTx(tx, modId)
-		if err != nil {
-			return err
-		}
+	unlock := ms.lockMod(modId)
+	defer unlock()
 
-		toolDir, err := ms.toolRoot(mod.ToolId)
-		if err != nil {
-			return err
-		}
+	mod, err := ms.getMod(modId)
+	if err != nil {
+		return err
+	}
 
+	toolDir, err := ms.toolRoot(mod.ToolId)
+	if err != nil {
+		return err
+	}
+
+	err = ms.db.Update(func(tx *bolt.Tx) error {
 		modDir := filepath.Join(toolDir, mod.Submission.Provider, mod.Submission.SubmissionID)
 		if err := os.RemoveAll(modDir); err != nil {
 			return err
@@ -491,6 +522,14 @@ func (ms *ModService) Remove(modId string, deleteKeybinds bool) error {
 
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	ms.app.Event.Emit("mod-removed", modId)
+
+	return nil
 }
 
 func (ms *ModService) Save(toolId ToolID, sub Submission, files []SubmissionFile, selected []Pack) error {

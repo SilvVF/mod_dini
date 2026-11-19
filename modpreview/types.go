@@ -5,9 +5,11 @@ const (
 	DefaultPositionOffset = 0
 	DefaultUVOffset       = 4
 
-	IndexSizeU32 = 4
-	IndexSizeU16 = 2
+	IndexSizeU32 IndexSize = 4
+	IndexSizeU16 IndexSize = 2
 )
+
+type IndexSize int
 
 type BaseModelCandidate struct {
 	FolderName           string `json:"folderName"`
@@ -33,7 +35,6 @@ type ViewerPayload struct {
 	Textures            map[string]string    `json:"textures"`
 	IsRetexture         bool                 `json:"isRetexture"`
 	BaseModelSource     *string              `json:"baseModelSource"`
-	Clues               []string             `json:"clues"`
 	BaseModelCandidates []BaseModelCandidate `json:"baseModelCandidates"`
 	Toggles             []ViewerToggle       `json:"toggles"`
 	SuggestedTags       []string             `json:"suggestedTags"`
@@ -81,7 +82,7 @@ type DrawGroup struct {
 	IBFile         string
 	PositionStride int
 	TexcoordStride int
-	IndexSize      int
+	IndexSize      IndexSize
 	DiffuseFile    *string
 	NormalFile     *string
 	LightFile      *string

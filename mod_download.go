@@ -217,12 +217,8 @@ func httpDownload(
 		total = sf.Size
 	}
 
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := os.CreateTemp(filepath.Join(cacheDir, "Temp"), "*-"+sf.FileName)
+	tempDir := os.TempDir()
+	f, err := os.CreateTemp(tempDir, "*-"+sf.FileName)
 	if err != nil {
 		return nil, err
 	}

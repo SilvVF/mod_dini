@@ -32,7 +32,9 @@ export function setSavedModsContext(initial: () => Record<string, ModSaved>) {
         console.log(e);
       });
     },
-    remove(modID) {},
+    remove(modID) {
+      ModService.Remove(modID, true);
+    },
     toggleAllPkgs(id) {
       const mod = this.mods[id];
       if (!mod) return;
@@ -73,6 +75,15 @@ export function setSavedModsContext(initial: () => Record<string, ModSaved>) {
   });
 
   setContext(SAVED_MODS_KEY, context);
+
+  onMount(() => {
+    const unsubscribe = Events.On("mod-removed", ({ data }) => {
+      if (!data) return;
+      delete context.mods[data];
+    });
+
+    return () => unsubscribe();
+  });
 
   onMount(() => {
     const unsubscribe = Events.On("mods-loaded", ({ data }) => {
