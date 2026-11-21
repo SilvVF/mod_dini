@@ -54,14 +54,8 @@
   const files = $derived(data.files);
 
   const localMod = $derived(
-    Object.values(saved.mods).find(
-      (v) =>
-        v.submission.provider === submission?.provider &&
-        v.submission.submissionId === submission?.submissionId,
-    ),
+    saved.mods[`${submission.provider}:${submission.submissionId}`],
   );
-  // The tool this mod installs to. A saved mod is locked to the tool it was installed
-  // under; otherwise it's what the backend resolved from the category, and the user can
   let toolId = $derived(localMod?.toolId ?? data.resolvedToolId ?? undefined);
   const needsTool = $derived(!localMod && !toolId);
 
@@ -104,6 +98,14 @@
   );
   const isInstalled = $derived(installedPacks.length > 0);
   const enabledCount = $derived(installedPacks.filter((p) => p.enabled).length);
+
+  const heroFromApi = $derived(submission.hero);
+
+  let selectedHero = $derived(heroFromApi);
+
+  const canSelectHero = $derived(heroFromApi == null && localMod == null);
+
+  const hero = $derived(selectedHero ?? heroFromApi ?? undefined);
 
   const IN_PROGRESS = [
     InstallState.InstallQueued,
@@ -190,6 +192,14 @@
       : "",
   );
 
+  let heroQuery = $state("");
+
+  const filteredCharacters = $derived(
+    Object.entries(characters).filter(([name]) =>
+      name.toLowerCase().includes(heroQuery.trim().toLowerCase()),
+    ),
+  );
+
   const card = "flex items-center gap-4 rounded-xl border bg-muted/30 p-4";
   const tile =
     "flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground";
@@ -211,27 +221,74 @@
 {#snippet heroCard()}
   <div class={card}>
     <Avatar class="size-10">
-      {#if submission.hero && characters[submission.hero]}
-        <AvatarImage
-          src={characters[submission.hero].icon}
-          alt={submission.hero}
-        />
+      {#if hero && characters[hero]}
+        <AvatarImage src={characters[hero].icon} alt={hero} />
       {/if}
-      <AvatarFallback>{initials(submission.hero ?? "?")}</AvatarFallback>
+      <AvatarFallback>{initials(hero ?? "?")}</AvatarFallback>
     </Avatar>
-    <div class="min-w-0">
+
+    <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
         <span class={label}>Hero</span>
-        {#if submission.hero}
+        {#if heroFromApi}
           <Badge variant="outline" class="h-5 px-1.5 text-[10px]">API</Badge>
+        {:else if hero}
+          <Badge variant="outline" class="h-5 px-1.5 text-[10px]">Manual</Badge>
         {/if}
       </div>
-      <div class="truncate font-semibold">{submission.hero ?? "Unknown"}</div>
+
+      {#if canSelectHero}
+        <Select.Root
+          type="single"
+          value={selectedHero ?? ""}
+          onValueChange={(value) => (selectedHero = value || null)}
+          onOpenChange={(open) => {
+            if (!open) heroQuery = "";
+          }}
+        >
+          <Select.Trigger
+            class="h-7 w-full border-0 bg-transparent p-0 text-left font-semibold shadow-none"
+          >
+            {hero ?? "Select a character"}
+          </Select.Trigger>
+
+          <Select.Content>
+            <div class="sticky top-0 z-10 bg-popover p-1">
+              <input
+                bind:value={heroQuery}
+                type="text"
+                placeholder="Search characters..."
+                class="h-8 w-full rounded-md border bg-background px-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                onkeydown={(e) => e.stopPropagation()}
+              />
+            </div>
+
+            {#each filteredCharacters as [name, character] (name)}
+              <Select.Item value={name} label={name}>
+                <div class="flex items-center gap-2">
+                  {#if character.icon}
+                    <img
+                      src={character.icon}
+                      alt=""
+                      class="size-5 rounded-full object-cover"
+                    />
+                  {/if}
+                  <span>{name}</span>
+                </div>
+              </Select.Item>
+            {:else}
+              <div class="px-2 py-4 text-center text-sm text-muted-foreground">
+                No characters found
+              </div>
+            {/each}
+          </Select.Content>
+        </Select.Root>
+      {:else}
+        <div class="truncate font-semibold">
+          {hero ?? "Unknown"}
+        </div>
+      {/if}
     </div>
-    <!-- TODO: hero override -->
-    <Button variant="ghost" size="icon" class="ml-auto size-8">
-      <Settings class="size-4" />
-    </Button>
   </div>
 {/snippet}
 
@@ -264,7 +321,6 @@
     <div class="min-w-0 flex-1">
       <div class={label}>Install to</div>
       {#if localMod || data.resolvedToolId}
-        <!-- installed: ModSaved.toolId is the truth, so it's read-only -->
         <div class="truncate font-mono font-semibold">
           {localMod
             ? toolName(localMod.toolId)

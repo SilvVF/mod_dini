@@ -140,11 +140,15 @@ func (s *Sweeper) doSweep() {
 			continue
 		}
 
+		unlock := s.ms.lockMod(modID)
+
 		if err := s.sweepMod(modID, task.ctx); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Printf("sweeper: mod %s: %v", modID, err)
 			}
 		}
+
+		unlock()
 		s.finishTask(modID, task)
 	}
 }

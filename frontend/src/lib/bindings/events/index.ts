@@ -14,6 +14,11 @@ import "../github.com/wailsapp/wails/v3/internal/eventcreate.js";
 export const ModDownloadProgress = "mod-download-progress";
 
 /**
+ * Name of the custom event "mod-removed".
+ */
+export const ModRemoved = "mod-removed";
+
+/**
  * Name of the custom event "mod-update".
  */
 export const ModUpdate = "mod-update";

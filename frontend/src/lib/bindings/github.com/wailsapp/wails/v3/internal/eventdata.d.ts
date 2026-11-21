@@ -13,6 +13,7 @@ declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
             "mod-download-progress": main$0.DataProgress;
+            "mod-removed": string;
             "mod-update": main$0.ModSaved;
             "mods-loaded": { [_ in `${number}`]?: main$0.ModSaved } | null;
             "setting-updated": main$0.Setting;

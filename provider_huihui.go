@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -51,7 +50,7 @@ type DownloadURLResponse struct {
 	} `json:"data"`
 }
 
-func (h *HuiHuiProvider) GetDownloadURL(
+func (h *HuiHuiProvider) getDownloadURL(
 	ctx context.Context,
 	fileURI string,
 ) (string, error) {
@@ -146,14 +145,15 @@ func (h *HuiHuiProvider) Page(ctx context.Context, submissionID string) (Submiss
 	}
 	defer res.Body.Close()
 
-	p, err := h.ParseSubmissionPage(ctx, res.Body)
+	p, err := h.parseSubmissionPage(ctx, res.Body)
 
 	return p, err
 }
 
 func (*HuiHuiProvider) List(ctx context.Context, p ListParams) (SubmissionList, error) {
 
-	url := "https://huihui648.org/category/" + p.Cat + "/page/" + strconv.Itoa(p.Page)
+	url := "https://huihui648.org/category/" + p.Cat + "?page=" + strconv.Itoa(p.Page)
+	log.Println("huihui url: ", url)
 
 	res, err := http.Get(url)
 	if err != nil {
@@ -161,226 +161,344 @@ func (*HuiHuiProvider) List(ctx context.Context, p ListParams) (SubmissionList, 
 	}
 	defer res.Body.Close()
 
-	subs, next, err := ParseCategoryPage(res.Body)
-
-	if err != nil {
-		return SubmissionList{}, err
-	}
+	subs := parseSubmissions(res.Body)
 
 	return SubmissionList{
 		Submissions: subs,
-		HasNext:     next != "",
+		HasNext:     len(subs) > 0,
 		Next:        p.Page + 1,
 		Prev:        p.Page - 1,
 	}, nil
 }
 
-var sizeRe = regexp.MustCompile(`(?i)([\d.]+)\s*(B|KB|MB|GB|TB)`)
-var postIDRe = regexp.MustCompile(`^post-\d+$`)
-
-func (h *HuiHuiProvider) ParseSubmissionPage(ctx context.Context, r io.Reader) (SubmissionPage, error) {
-	doc, err := goquery.NewDocumentFromReader(r)
-
+func (h *HuiHuiProvider) parseSubmissionPage(ctx context.Context, html io.Reader) (SubmissionPage, error) {
+	doc, err := goquery.NewDocumentFromReader(html)
 	if err != nil {
-		log.Println("failed to create doc")
 		return SubmissionPage{}, err
 	}
 
-	article := doc.Find("article.article-layout").First()
+	layout := doc.Find(".article-layout").First()
+	if layout.Length() == 0 {
+		return SubmissionPage{}, err
+	}
 
-	// --- ids / category / flags from the article's class list ---
-	var id, category string
-	for _, c := range strings.Fields(article.AttrOr("class", "")) {
-		switch {
-		case postIDRe.MatchString(c):
-			id = strings.TrimPrefix(c, "post-")
-		case strings.HasPrefix(c, "category-"):
-			category = strings.TrimPrefix(c, "category-")
+	main := layout.Find(".article-main").First()
+	if main.Length() == 0 {
+		return SubmissionPage{}, err
+	}
+
+	title := strings.TrimSpace(main.Find(".article-title h1").First().Text())
+	if title == "" {
+		return SubmissionPage{}, err
+	}
+
+	href := ""
+	if canonical, ok := doc.Find(`link[rel="canonical"]`).First().Attr("href"); ok {
+		href = canonical
+	}
+
+	if href == "" {
+		return SubmissionPage{}, err
+	}
+
+	parsedURL, err := url.Parse(href)
+	if err != nil {
+		return SubmissionPage{}, err
+	}
+
+	slug := strings.Trim(path.Base(strings.TrimSuffix(parsedURL.Path, "/")), "/")
+	if slug == "" || slug == "." {
+		return SubmissionPage{}, err
+	}
+
+	var added, updated int64
+
+	if published := doc.Find(`meta[property="article:published_time"]`).First().AttrOr("content", ""); published != "" {
+		if t, err := time.Parse(time.RFC3339Nano, published); err == nil {
+			added = t.Unix()
 		}
 	}
 
-	canonical := doc.Find(`link[rel="canonical"]`).AttrOr("href", "")
-	name := strings.TrimSpace(article.Find("h1").First().Text())
-
-	// --- tags (real display names) + author guess ---
-	var tags, authors []string
-	article.Find(`.article-tags a[rel="tag"]`).Each(func(_ int, a *goquery.Selection) {
-		label := strings.TrimSpace(a.Text())
-		if label == "" {
-			return
+	if modified := doc.Find(`meta[property="article:modified_time"]`).First().AttrOr("content", ""); modified != "" {
+		if t, err := time.Parse(time.RFC3339Nano, modified); err == nil {
+			updated = t.Unix()
 		}
-		tags = append(tags, label)
-
-		href := a.AttrOr("href", "")
-		slug := strings.Trim(href[strings.LastIndex(strings.TrimSuffix(href, "/"), "/")+1:], "/")
-		lower := strings.ToLower(label)
-		// creator tags have plain ASCII slugs; generic Chinese tags are
-		// percent-encoded, and nsfw/ui are generic too.
-		if strings.Contains(slug, "%") || lower == "nsfw" || lower == "ui" {
-			return
-		}
-		authors = append(authors, label)
-	})
-
-	// --- character (this is what Hero should hold) ---
-	var hero *string
-	if c := strings.TrimSpace(article.Find(`.article-tags a[href*="/character/"]`).First().Text()); c != "" {
-		hero = &c
 	}
 
-	// --- gallery images ---
+	if updated == 0 {
+		updated = added
+	}
+
+	viewsText := strings.TrimSpace(main.Find(".resource-views").First().Text())
+	viewsText = strings.TrimSpace(strings.TrimPrefix(viewsText, "阅读"))
+	views, _ := strconv.Atoi(viewsText)
+
+	// Extract gallery images.
 	var images []string
-	article.Find("a[data-gallery-thumbnail]").Each(func(_ int, a *goquery.Selection) {
-		if u := a.AttrOr("data-image-url", ""); u != "" {
-			images = append(images, u)
+
+	main.Find(".gallery-stage a.gallery-full, .gallery-thumbnails img").Each(func(_ int, s *goquery.Selection) {
+		src := ""
+
+		if s.Is("img") {
+			src = s.AttrOr("src", "")
+		} else {
+			src = s.AttrOr("href", "")
+		}
+
+		src = strings.TrimSpace(src)
+		if src == "" {
+			return
+		}
+
+		for _, existing := range images {
+			if existing == src {
+				return
+			}
+		}
+
+		images = append(images, src)
+	})
+
+	var cover *string
+	if len(images) > 0 {
+		cover = &images[0]
+	}
+
+	// Extract article description as HTML text.
+	description := strings.TrimSpace(main.Find(".article-body .prose").First().Text())
+
+	// Extract category.
+	category := ""
+	resource := layout.Find(".resource-panel").First()
+
+	resource.Find("dl dt").Each(func(i int, dt *goquery.Selection) {
+		if strings.TrimSpace(dt.Text()) == "分类" {
+			category = strings.TrimSpace(dt.Next().Text())
 		}
 	})
-	if len(images) == 0 {
-		if u := article.Find("img[data-gallery-image]").AttrOr("src", ""); u != "" {
-			images = append(images, u)
-		}
-	}
-	if images == nil {
-		images = []string{}
-	}
 
-	// og:image is the cover used on the cards
-	var thumb *string
-	if u := doc.Find(`meta[property="og:image"]`).AttrOr("content", ""); u != "" {
-		thumb = &u
-	} else if len(images) > 0 {
-		thumb = &images[0]
-	}
+	// Extract tags.
+	var tags []string
 
-	// --- description: entry-content with <br> turned into newlines ---
-	entry := article.Find(".entry-content").First().Clone()
-	entry.Find("br").ReplaceWithHtml("\n")
-	description := strings.TrimSpace(entry.Text())
-
-	// --- timestamps ---
-	added := parseMetaTime(doc, "article:published_time")
-	updated := parseMetaTime(doc, "article:modified_time")
-
-	// --- resource panel (version / size / updated / download button) ---
-	panel := map[string]string{}
-	article.Find(".resource-panel dl > div").Each(func(_ int, d *goquery.Selection) {
-		k := strings.TrimSpace(d.Find("dt").Text())
-		v := strings.TrimSpace(d.Find("dd").Text())
-		if k != "" {
-			panel[k] = v
+	main.Find(".article-body .article-tags").Last().Find("a").Each(func(_ int, a *goquery.Selection) {
+		tag := strings.TrimSpace(a.Text())
+		if tag != "" {
+			tags = append(tags, tag)
 		}
 	})
-	downloadURL := article.Find(".resource-panel a.download-button").AttrOr("href", "")
 
-	if tags == nil {
-		tags = []string{}
-	}
 	tagsJSON, _ := json.Marshal(tags)
 
-	sub := Submission{
+	// Extract author from tags.
+	author := "" //guessAuthor(tags)
+
+	// Extract download URL.
+	downloadURL := strings.TrimSpace(resource.Find("a.download-button").First().AttrOr("href", ""))
+
+	// Extract resource version and size.
+	var version, size string
+
+	resource.Find("dl dt").Each(func(i int, dt *goquery.Selection) {
+		switch strings.TrimSpace(dt.Text()) {
+		case "版本":
+			version = strings.TrimSpace(dt.Next().Text())
+		case "大小":
+			size = strings.TrimSpace(dt.Next().Text())
+		}
+	})
+
+	// Extract file information from the displayed resource size.
+	fileSize := parseResourceSize(size)
+
+	// Determine NSFW status.
+	isNSFW := false
+	for _, tag := range tags {
+		if strings.EqualFold(tag, "nsfw") {
+			isNSFW = true
+			break
+		}
+	}
+
+	// Determine category URL.
+	categoryURL := main.Find(".breadcrumbs a").Last().AttrOr("href", "")
+	if categoryURL != "" {
+		if u, err := url.Parse(categoryURL); err == nil {
+			categoryURL = strings.Trim(u.Path, "/")
+			categoryURL = strings.TrimPrefix(categoryURL, "category/")
+		}
+	}
+
+	submission := Submission{
 		Provider:        "huihui",
 		SubmissionType:  "mod",
-		SubmissionID:    id,
-		Slug:            canonical,
-		Name:            name,
-		Author:          strings.Join(authors, ", "),
+		SubmissionID:    slug,
+		Slug:            slug,
+		Name:            title,
+		Author:          author,
 		Description:     description,
-		ProfileURL:      canonical,
+		ProfileURL:      href,
 		Category:        category,
-		Hero:            hero,
-		IsNSFW:          containsFold(tags, "nsfw"),
+		Hero:            nil,
+		IsNSFW:          isNSFW,
 		IsHydrated:      true,
+		HasFiles:        downloadURL != "",
+		ViewCount:       views,
 		RemoteAddedAt:   added,
 		RemoteUpdatedAt: updated,
-		FilesUpdatedAt:  updated,
 		Images:          images,
 		Tags:            string(tagsJSON),
-		ThumbnailURL:    thumb,
+		ThumbnailURL:    cover,
 	}
 
-	// "https://cloudreve.huihui648.org/s/knQ4Iq"
-	shareID := strings.TrimPrefix(downloadURL, "https://cloudreve.huihui648.org/s/")
+	_ = version
+	_ = fileSize
+	_ = utf8.RuneCountInString(title)
 
-	subFiles := []SubmissionFile{}
+	subFiles := make([]SubmissionFile, 0)
 
-	files, err := h.ListFiles(ctx, shareID)
-	if err != nil {
-		log.Println("failed to list files", shareID)
-		return SubmissionPage{
-			Submission:      sub,
-			SubmissionFiles: subFiles,
-		}, err
-	}
-
-	for _, file := range files {
-		dlLink, err := h.GetDownloadURL(ctx, file.Path)
+	if downloadURL != "" {
+		shareURL, err := url.Parse(downloadURL)
 		if err != nil {
 			return SubmissionPage{}, err
 		}
-		subFiles = append(subFiles, SubmissionFile{
-			Provider:       "huihui",
-			SubmissionType: "mod",
-			SubmissionID:   id,
-			FileID:         file.ID,
-			FileName:       file.Name,
-			Size:           file.Size,
-			Description:    panel["版本"], // e.g. "v1.0"
-			DownloadURL:    dlLink,
-			AddedAt:        updated,
-		})
-	}
 
-	return SubmissionPage{Submission: sub, SubmissionFiles: subFiles}, nil
-}
+		shareID := strings.TrimPrefix(
+			strings.TrimSuffix(shareURL.Path, "/"),
+			"/s/",
+		)
 
-func parseMetaTime(doc *goquery.Document, prop string) int64 {
-	v := doc.Find(`meta[property="`+prop+`"]`).AttrOr("content", "")
-	if t, err := time.Parse(time.RFC3339, v); err == nil {
-		return t.Unix() // UnixMilli() if the rest of your code uses ms
-	}
-	return 0
-}
+		files, err := h.ListFiles(ctx, shareID)
+		if err != nil {
+			return SubmissionPage{
+				Submission:      submission,
+				SubmissionFiles: subFiles,
+			}, err
+		}
 
-func containsFold(ss []string, v string) bool {
-	for _, s := range ss {
-		if strings.EqualFold(s, v) {
-			return true
+		for _, file := range files {
+			dlLink, err := h.getDownloadURL(ctx, file.Path)
+			if err != nil {
+				continue
+			}
+
+			subFiles = append(subFiles, SubmissionFile{
+				Provider:       "huihui",
+				SubmissionType: "mod",
+				SubmissionID:   submission.SubmissionID,
+				FileID:         file.ID,
+				FileName:       file.Name,
+				Size:           file.Size,
+				Description:    "",
+				DownloadURL:    dlLink,
+				AddedAt:        updated,
+			})
 		}
 	}
-	return false
+
+	return SubmissionPage{
+		ResolvedToolId:  nil,
+		Submission:      submission,
+		SubmissionFiles: subFiles,
+	}, err
 }
 
-func ParseCategoryPage(r io.Reader) ([]Submission, string, error) {
-	doc, err := goquery.NewDocumentFromReader(r)
+func parseResourceSize(size string) int64 {
+	fields := strings.Fields(strings.TrimSpace(size))
+	if len(fields) == 0 {
+		return 0
+	}
+
+	value, err := strconv.ParseFloat(fields[0], 64)
 	if err != nil {
-		return nil, "", err
+		return 0
 	}
 
-	var chars []string
-	doc.Find(".character-card .character-name").Each(func(_ int, s *goquery.Selection) {
-		if n := strings.TrimSpace(s.Text()); n != "" {
-			chars = append(chars, n)
+	unit := ""
+	if len(fields) > 1 {
+		unit = strings.ToUpper(fields[1])
+	}
+
+	switch unit {
+	case "KB":
+		return int64(value * 1024)
+	case "MB":
+		return int64(value * 1024 * 1024)
+	case "GB":
+		return int64(value * 1024 * 1024 * 1024)
+	default:
+		return int64(value)
+	}
+}
+
+func parseSubmissions(html io.Reader) []Submission {
+	doc, err := goquery.NewDocumentFromReader(html)
+	if err != nil {
+		return nil
+	}
+
+	var submissions []Submission
+
+	doc.Find(".post-grid .post-card").Each(func(_ int, card *goquery.Selection) {
+		link := card.Find(".card-caption a").First()
+		if link.Length() == 0 {
+			link = card.Find("a").First()
 		}
-	})
 
-	cards := doc.Find(".updates-section article.work-card")
-	if cards.Length() == 0 {
-		cards = doc.Find("article.work-card")
-	}
-
-	var subs []Submission
-	seen := map[string]bool{}
-	cards.Each(func(_ int, s *goquery.Selection) {
-		sub, ok := parseCard(s, chars) // <- new arg
-		if !ok || seen[sub.SubmissionID] {
+		href, exists := link.Attr("href")
+		if !exists || href == "" {
 			return
 		}
-		seen[sub.SubmissionID] = true
-		subs = append(subs, sub)
+
+		parsedURL, err := url.Parse(href)
+		if err != nil {
+			return
+		}
+
+		slug := strings.Trim(path.Base(parsedURL.Path), "/")
+		if slug == "" || slug == "." {
+			return
+		}
+
+		name := strings.TrimSpace(card.Find(".card-caption h3").First().Text())
+		if name == "" {
+			name = strings.TrimSpace(card.Find("img").First().AttrOr("alt", ""))
+		}
+
+		img := strings.TrimSpace(card.Find(".cover-frame img").First().AttrOr("src", ""))
+
+		var thumbnail *string
+		if img != "" {
+			thumbnail = &img
+		}
+
+		var images []string
+		if img != "" {
+			images = append(images, img)
+		}
+
+		views := 0
+		viewsText := strings.TrimSpace(card.Find(".resource-views").First().Text())
+		viewsText = strings.TrimPrefix(viewsText, "阅读")
+		viewsText = strings.TrimSpace(viewsText)
+
+		if v, err := strconv.Atoi(viewsText); err == nil {
+			views = v
+		}
+		submissions = append(submissions, Submission{
+			Provider:       "huihui",
+			SubmissionType: "mod",
+			SubmissionID:   slug,
+			Slug:           wpSlug(href),
+			Name:           name,
+			ThumbnailURL:   thumbnail,
+			Hero:           nil,
+			Images:         images,
+			ViewCount:      views,
+			HasFiles:       true,
+		})
 	})
 
-	next, _ := doc.Find("nav.pagination a.next").First().Attr("href")
-	return subs, next, nil
+	return submissions
 }
 
 func wpSlug(href string) string {
@@ -390,151 +508,4 @@ func wpSlug(href string) string {
 	}
 	// u.Path is already percent-decoded, e.g. "/绝区零-蕾米埃尔-裸漏/"
 	return path.Base(strings.TrimSuffix(u.Path, "/"))
-}
-
-func parseCard(s *goquery.Selection, chars []string) (Submission, bool) {
-	var id, category string
-	var tags []string
-	for _, c := range strings.Fields(s.AttrOr("class", "")) {
-		switch {
-		case postIDRe.MatchString(c):
-			id = strings.TrimPrefix(c, "post-")
-		case strings.HasPrefix(c, "category-"):
-			category = strings.TrimPrefix(c, "category-")
-		case strings.HasPrefix(c, "tag-"):
-			t := strings.TrimPrefix(c, "tag-")
-			if u, err := url.PathUnescape(t); err == nil {
-				t = u
-			}
-			tags = append(tags, t)
-		}
-	}
-	if id == "" {
-		return Submission{}, false
-	}
-
-	link := s.Find("h3 a").First()
-	name := strings.TrimSpace(link.Text())
-	href, _ := link.Attr("href")
-
-	// cover image: src is the medium_large size, srcset has the rest
-	var coverURL, thumb *string
-	if img := s.Find("a.cover-link img").First(); img.Length() > 0 {
-		if src, ok := img.Attr("src"); ok {
-			coverURL = &src
-		}
-		small, _ := pickSrcset(img.AttrOr("srcset", ""))
-		if small == "" && coverURL != nil {
-			small = *coverURL
-		}
-		if small != "" {
-			thumb = &small
-		}
-	}
-
-	var added int64
-	if dt, ok := s.Find("time").First().Attr("datetime"); ok {
-		if t, err := time.Parse(time.RFC3339, dt); err == nil {
-			added = t.Unix() // use UnixMilli() if the rest of your code uses ms
-		}
-	}
-
-	images := []string{}
-	if coverURL != nil {
-		images = append(images, *coverURL)
-	}
-	tagsJSON, _ := json.Marshal(tags)
-
-	sub := Submission{
-		Provider:        "huihui",
-		SubmissionType:  "mod",
-		SubmissionID:    id,
-		Slug:            wpSlug(href),
-		Name:            name,
-		ProfileURL:      href,
-		Category:        category,
-		Hero:            matchCharacter(name, chars), // *string, nil if no match
-		ThumbnailURL:    thumb,
-		IsNSFW:          contains(tags, "nsfw"),
-		RemoteAddedAt:   added,
-		RemoteUpdatedAt: added,
-		Images:          images,
-		Tags:            string(tagsJSON),
-	}
-	if a := guessAuthor(tags); a != "" {
-		sub.Author = a
-	}
-	return sub, true
-}
-
-// Names that show up in the character grid but aren't real characters, or are
-// too generic to match against a title.
-var skipChars = map[string]bool{
-	"UI": true, "UI界面": true, "界面UI": true, "功能": true, "功能性": true,
-	"全角色": true, "武器": true, "滑翔机": true, "漂泊者": true, "开拓者": true,
-}
-
-// matchCharacter returns the longest character name contained in the title.
-func matchCharacter(title string, chars []string) *string {
-	best := ""
-	for _, c := range chars {
-		if skipChars[c] || utf8.RuneCountInString(c) < 2 {
-			continue
-		}
-		if strings.Contains(title, c) && len(c) > len(best) {
-			best = c
-		}
-	}
-	if best == "" {
-		return nil
-	}
-	return &best
-}
-
-// guessAuthor: on this site the creator shows up as one of the tag-* classes,
-// mixed in with generic ones (nsfw, ui, numeric tags like 16/118). Drop the
-// generic ones and take what's left. It's a heuristic, not reliable.
-func guessAuthor(tags []string) string {
-	generic := map[string]bool{"nsfw": true, "ui": true}
-	for _, t := range tags {
-		if generic[t] {
-			continue
-		}
-		if _, err := strconv.Atoi(t); err == nil {
-			continue
-		}
-		return t
-	}
-	return ""
-}
-
-// pickSrcset returns the smallest and largest URLs from a srcset string.
-func pickSrcset(srcset string) (smallest, largest string) {
-	minW, maxW := 1<<30, 0
-	for _, part := range strings.Split(srcset, ",") {
-		f := strings.Fields(strings.TrimSpace(part))
-		if len(f) != 2 || !strings.HasSuffix(f[1], "w") {
-			continue
-		}
-		w, err := strconv.Atoi(strings.TrimSuffix(f[1], "w"))
-		if err != nil {
-			continue
-		}
-		if w < minW {
-			minW, smallest = w, f[0]
-		}
-		if w > maxW {
-			maxW, largest = w, f[0]
-		}
-	}
-	return
-}
-
-func contains(ss []string, v string) bool {
-	for _, s := range ss {
-		if s == v {
-			return true
-		}
-	}
-	return false
 }

@@ -28,7 +28,6 @@ export interface ViewerPayload {
     "textures": { [_ in string]?: string } | null;
     "isRetexture": boolean;
     "baseModelSource": string | null;
-    "clues": string[] | null;
     "baseModelCandidates": BaseModelCandidate[] | null;
     "toggles": ViewerToggle[] | null;
     "suggestedTags": string[] | null;

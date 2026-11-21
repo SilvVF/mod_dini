@@ -1,9 +1,96 @@
 <script lang="ts">
-  import type { Submission } from "../../bindings/changeme";
-  import DateDisplay from "./DateDisplay.svelte";
+  import {
+    InstallState,
+    StorageState,
+    type Submission,
+  } from "../../bindings/changeme";
+
   import { epochSecondsToDate } from "./utils";
 
-  let { submission }: { submission: Submission } = $props();
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Button } from "#lib/components/ui/button/index.ts";
+
+  import {
+    Heart,
+    CalendarDays,
+    ViewIcon,
+    DownloadIcon,
+    CheckIcon,
+    LoaderCircleIcon,
+    TriangleAlertIcon,
+    ArchiveRestoreIcon,
+  } from "@lucide/svelte";
+  import { cn } from "#lib/utils.ts";
+  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
+  import type { ClassValue } from "svelte/elements";
+
+  let {
+    submission,
+    onDownload,
+    class: className
+  }: {
+    submission: Submission;
+    /** Called when the user clicks Download (or Retry after a failed install). */
+    onDownload?: (submission: Submission) => void;
+    class?: ClassValue | undefined | null; 
+  } = $props();
+
+  const saved = getSavedModsContext();
+
+  const local = $derived(saved.mods[`${submission.provider}:${submission.submissionId}`]);
+
+  const packs = $derived(local?.packages ?? []);
+
+  type DownloadStatus =
+    | "none"
+    | "queued"
+    | "downloading"
+    | "extracting"
+    | "restoring"
+    | "error"
+    | "downloaded";
+
+  const status: DownloadStatus = $derived.by(() => {
+    // Not saved locally at all -> can be downloaded.
+    if (!local) return "none";
+
+    if (packs.some((p) => p.state === InstallState.InstallErr)) return "error";
+    if (packs.some((p) => p.state === InstallState.InstallDownloading))
+      return "downloading";
+    if (packs.some((p) => p.state === InstallState.InstallExtracting))
+      return "extracting";
+    if (packs.some((p) => p.state === InstallState.InstallQueued))
+      return "queued";
+    if (
+      packs.some(
+        (p) =>
+          p.storage === StorageState.StorageRestoring ||
+          p.storage === StorageState.StorageCompressing,
+      )
+    )
+      return "restoring";
+
+    return "downloaded";
+  });
+
+  const busy = $derived(
+    status === "queued" ||
+      status === "downloading" ||
+      status === "extracting" ||
+      status === "restoring",
+  );
+
+  const statusLabel = $derived(
+    {
+      none: "Download",
+      queued: "Queued",
+      downloading: "Downloading…",
+      extracting: "Extracting…",
+      restoring: "Restoring…",
+      error: "Retry",
+      downloaded: "Downloaded",
+    }[status],
+  );
 
   function formatCount(value: number): string {
     return new Intl.NumberFormat("en", {
@@ -12,107 +99,147 @@
     }).format(value);
   }
 
-  function getTags(tags: string): string[] {
-    try {
-      return JSON.parse(tags || "[]");
-    } catch {
-      return [];
-    }
+  function formatDate(value: number): string {
+    return new Intl.DateTimeFormat("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(epochSecondsToDate(value));
   }
 </script>
 
-<a
-  href={`/mod/${submission.provider}/${submission.slug}`}
-  class="flex gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent"
+<article
+  class={cn(
+    "group flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-card transition-colors hover:border-primary/50",
+    status === "error" && "border-destructive/60",
+    className
+  )}
 >
-  <div class="h-20 w-28 shrink-0 overflow-hidden rounded-md bg-muted">
+  <!-- Thumbnail -->
+  <a
+    data-sveltekit-preload-data="false"
+    href={`/mod/${submission.provider}/${submission.slug}`}
+    class={cn(
+      local ? "opacity-75" : "",
+      "relative block aspect-video overflow-hidden bg-muted",
+    )}
+  >
     {#if submission.thumbnailUrl}
       <img
         src={submission.thumbnailUrl}
-        alt=""
+        alt={submission.name}
         loading="lazy"
-        class="h-full w-full object-cover"
+        class="size-full object-cover transition-transform duration-300 group-hover:scale-105"
       />
     {:else}
       <div
-        class="flex h-full items-center justify-center text-xs text-muted-foreground"
+        class="flex size-full items-center justify-center text-sm text-muted-foreground"
       >
-        No image
+        No image available
       </div>
     {/if}
-  </div>
 
-  <div class="flex min-w-0 flex-1 flex-col justify-between gap-2">
-    <div class="space-y-1">
-      <div class="flex flex-wrap items-center gap-2">
-        <h3 class="truncate font-semibold">{submission.name}</h3>
+    <div
+      class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100"
+    ></div>
 
+    {#if submission.isNsfw || submission.isObsolete || submission.isTombstoned}
+      <div class="absolute left-2 top-2 flex flex-wrap gap-1.5">
         {#if submission.isNsfw}
-          <span
-            class="rounded bg-red-500/10 px-1.5 py-0.5 text-xs text-red-500"
+          <Badge
+            variant="destructive"
+            class="border-0 bg-red-500/90 text-white"
           >
             NSFW
-          </span>
+          </Badge>
         {/if}
 
         {#if submission.isObsolete}
-          <span
-            class="rounded bg-yellow-500/10 px-1.5 py-0.5 text-xs text-yellow-600"
+          <Badge
+            class="border-0 bg-yellow-500/90 text-black hover:bg-yellow-500/90"
           >
             Obsolete
-          </span>
+          </Badge>
         {/if}
 
         {#if submission.isTombstoned}
-          <span
-            class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-          >
+          <Badge variant="secondary" class="border-0 bg-black/70 text-white">
             Removed
-          </span>
+          </Badge>
         {/if}
       </div>
+    {/if}
+  </a>
 
-      <p class="line-clamp-2 text-sm text-muted-foreground">
-        {submission.hero || "No description available."}
-      </p>
+  <!-- Content -->
+  <div class="flex min-w-0 flex-1 flex-col gap-2 p-3">
+    <a href={`/mod/${submission.provider}/${submission.slug}`} class="min-w-0">
+      <h3
+        class="truncate text-base font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary"
+        title={submission.name}
+      >
+        {submission.name}
+      </h3>
+    </a>
 
-      <div class="line-clamp-2 text-sm text-muted-foreground">
-        {@html submission.description || "No description available."}
-      </div>
+    <p class="truncate text-sm text-muted-foreground">
+      By {submission.author}
+    </p>
+
+    <div
+      class="mt-auto flex items-center gap-4 pt-2 text-xs text-muted-foreground"
+    >
+      <span class="inline-flex items-center gap-1.5" title="Views">
+        <ViewIcon class="size-3.5" />
+        {formatCount(submission.viewCount)}
+      </span>
+
+      <span class="inline-flex items-center gap-1.5" title="Likes">
+        <Heart class="size-3.5" />
+        {formatCount(submission.likes)}
+      </span>
+
+      {#if submission.category}
+        <span class="ml-auto truncate text-xs" title={submission.category}>
+          {submission.category}
+        </span>
+      {/if}
     </div>
 
     <div
-      class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+      class="flex items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground"
     >
-      <span>{submission.author}</span>
-      <span>{submission.category}</span>
-      <DateDisplay
-        date={epochSecondsToDate(submission.remoteUpdatedAt)}
-        prefix="added"
-        class="text-xs text-muted-foreground"
-      />
-    </div>
+      <span class="inline-flex min-w-0 items-center gap-1.5">
+        <CalendarDays class="size-3.5 shrink-0" />
+        <span class="truncate">{formatDate(submission.remoteUpdatedAt)}</span>
+      </span>
 
-    <div class="flex flex-wrap gap-1">
-      {#each getTags(submission.tags).slice(0, 5) as tag}
-        <span
-          class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-        >
-          {tag}
-        </span>
-      {/each}
+      <Button
+        variant={status === "error"
+          ? "destructive"
+          : status === "downloaded"
+            ? "secondary"
+            : "outline"}
+        size="sm"
+        class="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+        disabled={busy || status === "downloaded"}
+        onclick={() => onDownload?.(submission)}
+        title={statusLabel}
+        aria-label={statusLabel}
+      >
+        {#if status === "none"}
+          <DownloadIcon class="size-3.5" />
+        {:else if status === "restoring"}
+          <ArchiveRestoreIcon class="size-3.5" />
+        {:else if busy}
+          <LoaderCircleIcon class="size-3.5 animate-spin" />
+        {:else if status === "error"}
+          <TriangleAlertIcon class="size-3.5" />
+        {:else}
+          <CheckIcon class="size-3.5" />
+        {/if}
+        {statusLabel}
+      </Button>
     </div>
   </div>
-
-  <div class="hidden shrink-0 flex-col justify-center gap-2 text-right sm:flex">
-    <div>
-      <p class="text-sm font-semibold">{formatCount(submission.viewCount)}</p>
-      <p class="text-xs text-muted-foreground">Views</p>
-    </div>
-
-    <div>
-      <p class="text-sm font-semibold">{formatCount(submission.likes)}</p>
-      <p class="text-xs text-muted-foreground">Likes</p>
-    </div>
-  </div>
-</a>
+</article>
