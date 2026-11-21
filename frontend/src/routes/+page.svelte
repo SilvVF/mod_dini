@@ -1,255 +1,295 @@
 <script lang="ts">
-  import { page } from "$app/state";
+  import type { PageProps } from "./$types";
+  import * as Resizable from "#lib/components/ui/resizable/index.js";
+  import * as Sidebar from "#lib/components/ui/sidebar/index.ts";
+  import { ChevronDown } from "@lucide/svelte";
+  import { Collapsible } from "bits-ui";
   import {
-    createInfiniteQuery,
-    infiniteQueryOptions,
-  } from "@tanstack/svelte-query";
-  import { createVirtualizer } from "@tanstack/svelte-virtual";
-  import { untrack } from "svelte";
+    StorageState,
+    type CharacterFolder,
+    type ModSaved,
+    type Pack,
+    type Subfolder,
+  } from "#lib/bindings/changeme/models.ts";
+  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
+  import ModCard from "#lib/components/dini/ModCard.svelte";
+  import ModLibraryHeader from "#lib/components/dini/ModLibraryHeader.svelte";
+  import { compact, sumBy } from "#lib/ts-ext.ts";
+  import {
+    groupModsByFolders,
+    type SelectedItem,
+  } from "#lib/contexts/group-mods.ts";
+  import LibraryConfig from "#lib/components/dini/LibraryConfig.svelte";
+  import type { GameConfig } from "#lib/components/dini/types.ts";
+  import { formatSize } from "#lib/components/dini/utils.ts";
+  import { appState, toolBanner, toolName } from "#lib/state/app.svelte.ts";
 
-  import { ModService } from "#lib/bindings/changeme/index.ts";
-  import SubmissionPreview from "#lib/components/dini/SubmissionPreview.svelte";
+  let { data }: PageProps = $props();
 
-  let searchQuery = $state(page.url.searchParams.get("search") ?? "");
-  let debouncedSearch = $state(searchQuery);
+  const saved = getSavedModsContext();
 
-  let filters = $state({
-    categories: [] as string[],
-    heroes: [] as string[],
-    sort: "default",
-    hideNsfw: false,
-    favoritesOnly: false,
+  let selectedItemId = $state<string | undefined>(undefined);
+  const toolId = $derived(appState.activeTool);
+  const rootFolder = $derived(data.rootFolder[toolId]);
+  const subfoldersRecord = $derived(compact(rootFolder?.subfolders ?? {}));
+  const charactersRecord = $derived(
+    compact(rootFolder.characters.characters ?? {}),
+  );
+
+  const selected = $derived.by<SelectedItem>(() => {
+    if (!selectedItemId) return { type: "nothing", value: null };
+    const subfolder = {
+      type: "character",
+      value: subfoldersRecord[selectedItemId],
+    };
+    const character = {
+      type: "subfolder",
+      value: charactersRecord[selectedItemId],
+    };
+
+    return (
+      subfolder.value
+        ? subfolder
+        : character.value
+          ? character
+          : { type: "nothing", value: null }
+    ) as SelectedItem;
   });
 
-  const PAGE_SIZE = 50;
-  const ESTIMATED_ROW_HEIGHT = 340;
-  const LOAD_MORE_THRESHOLD = 4;
-
-  let parentElement: HTMLDivElement | undefined = $state(undefined);
-
-  let columns = $state(4);
-
-  let resizeObserver: ResizeObserver | undefined;
-
-  let resizeElement = $state<HTMLElement | null>(null);
+  let selectedModId = $state<string | undefined>(undefined);
 
   $effect(() => {
-    if (!resizeElement) return;
-
-    resizeObserver?.disconnect();
-
-    resizeObserver = new ResizeObserver(([entry]) => {
-      const width = entry.contentRect.width;
-
-      columns =
-        width >= 1536
-          ? 6
-          : width >= 1280
-            ? 5
-            : width >= 1024
-              ? 4
-              : width >= 768
-                ? 3
-                : width >= 640
-                  ? 2
-                  : 1;
-    });
-
-    resizeObserver.observe(resizeElement);
-
-    return () => resizeObserver?.disconnect();
+    selectedItemId;
+    selectedModId = undefined;
   });
 
-  let debounceTimeout: ReturnType<typeof setTimeout>;
+  const characters = $derived(Object.entries(charactersRecord));
+  const subfolders = $derived(Object.entries(subfoldersRecord));
 
-  $effect(() => {
-    const query = searchQuery;
+  const mods = $derived(
+    Object.values(saved.mods).filter((m) => m.toolId === toolId),
+  );
+  const groupedMods = $derived(
+    groupModsByFolders(mods, rootFolder, charactersRecord, subfoldersRecord),
+  );
 
-    clearTimeout(debounceTimeout);
-
-    debounceTimeout = setTimeout(() => {
-      debouncedSearch = query;
-    }, 300);
-
-    return () => clearTimeout(debounceTimeout);
-  });
-
-  const queryFilters = $derived({
-    search: debouncedSearch.trim(),
-    categories: filters.categories,
-    heroes: filters.heroes,
-    sort: filters.sort,
-    hideNsfw: filters.hideNsfw,
-    favoritesOnly: filters.favoritesOnly,
-  });
-
-  const query = createInfiniteQuery(() =>
-    infiniteQueryOptions({
-      queryKey: ["source", page.params.provider, page.params.cat],
-      initialPageParam: Number(page.url.searchParams.get("page") ?? 1),
-      queryFn: ({ pageParam }) =>
-        ModService.List({
-          provider: page.params.provider!,
-          cat: page.params.cat!,
-          page: pageParam,
-        }),
-      getNextPageParam: (lastPage) =>
-        lastPage.hasNext ? lastPage.next : undefined,
+  const selectedGroups = $derived(
+    groupedMods.filter((m) => {
+      return selected.type === "nothing"
+        ? true
+        : m.folder.name === selected.value.name;
     }),
   );
 
-  const submissions = $derived(
-    query.data?.pages.flatMap((p) => p.submissions) ?? [],
+  const selectedCount = $derived(
+    sumBy(selectedGroups, (group) => group.items.length),
   );
 
-  const rows = $derived.by(() => {
-    const result: (typeof submissions)[] = [];
+  const selectedMod = $derived(
+    selectedModId ? saved.mods[selectedModId] : undefined,
+  );
 
-    for (let i = 0; i < submissions.length; i += columns) {
-      result.push(submissions.slice(i, i + columns));
-    }
+  const enabled = $derived(
+    mods.filter((m) =>
+      m.packages?.some((p) => p.enabled && m.toolId === toolId),
+    ).length,
+  );
+  const totalSize = $derived.by(() => {
+    let total = 0;
 
-    return result;
-  });
-
-  const virtualizer = createVirtualizer({
-    get count() {
-      return rows.length;
-    },
-    getScrollElement: () => parentElement!,
-    estimateSize: () => ESTIMATED_ROW_HEIGHT,
-    overscan: 3,
-  });
-
-  const virtualRows = $derived($virtualizer.getVirtualItems());
-
-  const lastVirtualRowIndex = $derived(virtualRows.at(-1)?.index ?? -1);
-
-  $effect(() => {
-    if (
-      !query.hasNextPage ||
-      query.isFetchingNextPage ||
-      query.isFetchNextPageError ||
-      lastVirtualRowIndex < rows.length - LOAD_MORE_THRESHOLD
-    ) {
-      return;
-    }
-
-    query.fetchNextPage();
-  });
-
-  $effect(() => {
-    untrack(() => {
-      if (parentElement) {
-        parentElement.scrollTo({
-          top: 0,
-          behavior: "instant",
-        });
+    for (const mod of mods) {
+      for (const pack of mod.packages ?? []) {
+        if (pack.storage === StorageState.StorageCold) {
+          total += pack.archiveSize;
+        } else {
+          total += pack.manifest.size;
+        }
       }
-    });
+    }
+
+    return total;
   });
 
-  const updateSearch = (value: string) => {
-    searchQuery = value;
-  };
+  let config = $derived<GameConfig>({
+    game: {
+      id: appState.activeTool,
+      name: toolName(appState.activeTool),
+      image: toolBanner(appState.activeTool),
+    },
+    preset: {
+      id: "p1",
+      name: "Preset 1",
+      modIds: [],
+    },
+    mods: groupedMods.flatMap((group) => group.items),
+    stats: {
+      loaded: enabled,
+      total: mods.length,
+      sizeOnDisk: formatSize(totalSize),
+      overlaps: 0,
+      updates: 0,
+    },
+    launchVanilla: false,
+  });
 
-  const updateFilters = (next: Partial<typeof filters>) => {
-    filters = { ...filters, ...next };
-  };
+  function handleSubfolderSelected(folder: Subfolder) {
+    selectedItemId = folder.id;
+  }
+
+  function handleCharacterSelected(folder: CharacterFolder) {
+    selectedItemId = folder.name;
+  }
+
+  function handleCloseMod() {
+    selectedModId = undefined;
+  }
+
+  function handleSelectMod(id: string) {
+    selectedModId = id;
+  }
+
+  function hanldeModCardClick(mod: ModSaved) {
+    selectedModId = mod.id;
+  }
+
+  function handlePkgSelected(mod: ModSaved, pkg: Pack) {
+    saved.enablePkg(mod.id, pkg.id);
+  }
+
+  function handleModToggle(mod: ModSaved) {
+    saved.toggleAllPkgs(mod.id);
+  }
+
+  function handleVanillaChange(v: boolean) {}
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col gap-4">
-  <div class="flex items-center gap-3">
-    <input
-      class="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"
-      type="search"
-      placeholder="Search submissions..."
-      bind:value={searchQuery}
-    />
-
-    <select
-      class="h-10 rounded-md border bg-background px-3 text-sm"
-      value={filters.sort}
-      onchange={(event) => updateFilters({ sort: event.currentTarget.value })}
-    >
-      <option value="default">Default</option>
-      <option value="lastUpdated">Last updated</option>
-      <option value="downloadCount">Downloads</option>
-      <option value="rating">Rating</option>
-      <option value="releaseDate">Release date</option>
-    </select>
-  </div>
-
-  <div class="flex min-h-0 flex-1 flex-col" aria-busy={query.isFetching}>
-    {#if query.isPending}
-      <div
-        class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-      >
-        {#each Array(8) as _, i (`skeleton-${i}`)}
-          <div class="h-80 animate-pulse rounded-xl bg-muted"></div>
-        {/each}
-      </div>
-    {:else if query.isError}
-      <div
-        class="flex flex-1 items-center justify-center text-sm text-destructive"
-      >
-        {query.error.message}
-      </div>
-    {:else if submissions.length === 0}
-      <div
-        class="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground"
-      >
-        <p class="text-lg font-semibold">No submissions found</p>
-        <p class="text-sm">
-          {searchQuery ||
-          Object.values(filters).some((v) =>
-            Array.isArray(v) ? v.length > 0 : v !== false && v !== "default",
-          )
-            ? "Try changing your search or filters."
-            : "There are no submissions available."}
-        </p>
-      </div>
-    {:else}
-      <div
-        bind:this={parentElement}
-        bind:this={resizeElement}
-        class="min-h-0 flex-1 overflow-auto"
-      >
-        <div
-          class="relative w-full"
-          style="height: {$virtualizer.getTotalSize()}px;"
-        >
-          {#each virtualRows as virtualRow (virtualRow.key)}
-            <div
-              class="absolute left-0 top-0 w-full"
-              style="
-                height: {virtualRow.size}px;
-                transform: translateY({virtualRow.start}px);
-                contain: strict;
-              "
-            >
-              <div
-                class="grid gap-4 px-1 pr-2"
-                style="grid-template-columns: repeat({columns}, minmax(0, 1fr));"
-              >
-                {#each rows[virtualRow.index] ?? [] as submission (`${submission?.provider}:${submission?.submissionId}`)}
-                  {#if submission}
-                    <SubmissionPreview {submission} />
-                  {/if}
+<div class="overflow-clip">
+  <Resizable.PaneGroup
+    direction="horizontal"
+    class="h-full rounded-sm border w-full overflow-clip min-h-[90vh] max-h-[90vh]"
+  >
+    <Resizable.Pane defaultSize={20} maxSize={40} minSize={10}>
+      <div class="overflow-y-scroll h-full">
+        <Collapsible.Root open class="group/collapsible">
+          <Sidebar.Group>
+            <Sidebar.GroupLabel>
+              {#snippet child({ props })}
+                <Collapsible.Trigger {...props}>
+                  Other
+                  <ChevronDown
+                    class="ms-auto transition-transform group-data-[state=open]/collapsible:rotate-180"
+                  />
+                </Collapsible.Trigger>
+              {/snippet}
+            </Sidebar.GroupLabel>
+            <Collapsible.Content>
+              <Sidebar.GroupContent>
+                {#each subfolders as [name, folder] (name)}
+                  <Sidebar.MenuItem>
+                    <Sidebar.MenuButton
+                      isActive={folder.name === selected.value?.name}
+                      onclick={() => handleSubfolderSelected(folder)}
+                    >
+                      <span>{name}</span>
+                    </Sidebar.MenuButton>
+                  </Sidebar.MenuItem>
                 {/each}
-              </div>
-            </div>
+              </Sidebar.GroupContent>
+            </Collapsible.Content>
+          </Sidebar.Group>
+        </Collapsible.Root>
+        <Collapsible.Root open class="group/collapsible">
+          <Sidebar.Group>
+            <Sidebar.GroupLabel>
+              {#snippet child({ props })}
+                <Collapsible.Trigger {...props}>
+                  Characters
+                  <ChevronDown
+                    class="ms-auto transition-transform group-data-[state=open]/collapsible:rotate-180"
+                  />
+                </Collapsible.Trigger>
+              {/snippet}
+            </Sidebar.GroupLabel>
+            <Collapsible.Content>
+              <Sidebar.Group>
+                <Sidebar.GroupContent>
+                  <Sidebar.Menu>
+                    {#each characters as [name, folder] (name)}
+                      <Sidebar.MenuItem>
+                        <Sidebar.MenuButton
+                          isActive={folder.name === selected.value?.name}
+                          onclick={() => handleCharacterSelected(folder)}
+                        >
+                          {#if folder.icon}
+                            <img
+                              class="size-8 object-contain rounded-sm"
+                              src={folder.icon}
+                              alt={name}
+                            />
+                          {/if}
+                          <span>{name}</span>
+                        </Sidebar.MenuButton>
+                      </Sidebar.MenuItem>
+                    {/each}
+                  </Sidebar.Menu>
+                </Sidebar.GroupContent>
+              </Sidebar.Group>
+            </Collapsible.Content>
+          </Sidebar.Group>
+        </Collapsible.Root>
+      </div>
+    </Resizable.Pane>
+    <Resizable.Handle withHandle />
+    <Resizable.Pane defaultSize={60} minSize={40}>
+      <div class="flex h-full min-h-0 w-full overflow-clip flex-col">
+        <ModLibraryHeader
+          {selected}
+          image={config.game.image}
+          charactersCount={characters.length}
+          subfoldersCount={subfolders.length}
+          mods={selectedCount}
+          game={config.game.name.toUpperCase()}
+          loaded={0}
+        />
+        <div
+          class="grid min-h-0 flex-1 w-full p-2 grid-cols-1
+    auto-rows-min items-stretch gap-4
+    overflow-y-auto
+    sm:grid-cols-2
+    md:grid-cols-3
+    lg:grid-cols-3
+    xl:grid-cols-4
+    2xl:grid-cols-5"
+        >
+          {#each selectedGroups as group}
+            {#each group.items as mod (`${group.name}:${mod.id}`)}
+              <ModCard
+                item={{
+                  name: group.name,
+                  folder: group.folder,
+                  local: mod,
+                }}
+                onClick={() => hanldeModCardClick(mod)}
+                onSettings={() => {}}
+                onDelete={() => {}}
+                onToggle={() => handleModToggle(mod)}
+              />
+            {/each}
           {/each}
         </div>
-
-        {#if query.isFetchingNextPage}
-          <div class="flex justify-center py-6">
-            <span class="text-sm text-muted-foreground">
-              Loading more submissions...
-            </span>
-          </div>
-        {/if}
       </div>
-    {/if}
-  </div>
+    </Resizable.Pane>
+    <Resizable.Handle withHandle />
+    <Resizable.Pane defaultSize={20} maxSize={40} minSize={10}>
+      <LibraryConfig
+        {config}
+        {selectedMod}
+        folders={["Character", "Others"]}
+        onTogglePack={handlePkgSelected}
+        onselectmod={handleSelectMod}
+        onclosemod={handleCloseMod}
+        onvanillachange={handleVanillaChange}
+      />
+    </Resizable.Pane>
+  </Resizable.PaneGroup>
 </div>

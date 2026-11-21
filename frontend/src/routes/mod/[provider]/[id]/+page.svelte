@@ -5,7 +5,9 @@
 
   import {
     InstallState,
+    ModService,
     StorageState,
+    type ModSaved,
     type Pack,
   } from "#lib/bindings/changeme/index.ts";
   import { statusOf, type PackageView } from "#lib/contexts/group-mods.ts";
@@ -43,9 +45,12 @@
   import MessageCircle from "@lucide/svelte/icons/message-circle";
   import Package from "@lucide/svelte/icons/package";
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
-  import Settings from "@lucide/svelte/icons/settings";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Wrench from "@lucide/svelte/icons/wrench";
+  import SubmissionFilePreview from "#lib/components/dini/SubmissionFilePreview.svelte";
+  import ModViewerModel from "#lib/components/viewer/ModViewer.svelte";
+  import ModViewer from "#lib/components/viewer/ModViewer.svelte";
+  import { createQuery } from "@tanstack/svelte-query";
 
   let { data }: PageProps = $props();
   const saved = getSavedModsContext();
@@ -53,7 +58,7 @@
   const submission = $derived(data.submission);
   const files = $derived(data.files);
 
-  const localMod = $derived(
+  const localMod: ModSaved | undefined = $derived(
     saved.mods[`${submission.provider}:${submission.submissionId}`],
   );
   let toolId = $derived(localMod?.toolId ?? data.resolvedToolId ?? undefined);
@@ -107,6 +112,17 @@
 
   const hero = $derived(selectedHero ?? heroFromApi ?? undefined);
 
+  let selectedPackPreviewId: string | undefined = $derived(undefined);
+
+  const previewQuery = createQuery(() => ({
+    queryKey: ["preview-model", localMod?.id, selectedPackPreviewId],
+    queryFn: async () => {
+      if (!localMod || !selectedPackPreviewId) return;
+      return await ModService.PreviewPack(localMod.id, selectedPackPreviewId);
+    },
+    enabled: localMod !== undefined && selectedPackPreviewId !== undefined,
+  }));
+
   const IN_PROGRESS = [
     InstallState.InstallQueued,
     InstallState.InstallDownloading,
@@ -130,10 +146,47 @@
     { value: "comments", label: "Comments", icon: MessageCircle },
     { value: "files", label: "Files", icon: Files },
   ];
-  const comingSoon = ["3d", "changelog", "comments"];
+  const comingSoon = ["changelog", "comments"];
+
+  const isBusy = (p: Pack) =>
+    p.storage === StorageState.StorageCompressing ||
+    p.storage === StorageState.StorageRestoring;
+
+  const progressPct = (p: Pack) =>
+    dlProgress && dlProgress.packageId === p.id && dlProgress.total > 0
+      ? (dlProgress.progress / dlProgress.total) * 100
+      : 0;
+
+  // unix seconds or milliseconds
+  const toDate = (ts: number) => new Date(ts < 1e12 ? ts * 1000 : ts);
+  const ago = (ts: number) =>
+    ts ? formatDistanceToNow(toDate(ts), { addSuffix: true }) : "-";
+
+  const initials = (s: string) => s.slice(0, 2).toUpperCase();
+
+  const downloads = $derived(files.reduce((n, f) => n + f.downloadCount, 0));
+
+  const authorUrl = $derived(
+    submission.provider === "gamebanana" && submission.authorRemoteId
+      ? `https://gamebanana.com/members/${submission.authorRemoteId}`
+      : "",
+  );
+
+  let heroQuery = $state("");
+
+  const filteredCharacters = $derived(
+    Object.entries(characters).filter(([name]) =>
+      name.toLowerCase().includes(heroQuery.trim().toLowerCase()),
+    ),
+  );
 
   function handleConfirmDownload(packs: PackageView[]) {
     if (!toolId) return;
+
+    if (canSelectHero && selectedHero !== null) {
+      submission.hero = selectedHero;
+    }
+
     saved.add(
       submission,
       files,
@@ -160,45 +213,8 @@
   }
 
   function deleteMod() {
-    saved.remove(submission.submissionId);
+    if (localMod) saved.remove(localMod.id);
   }
-
-  const isBusy = (p: Pack) =>
-    p.storage === StorageState.StorageCompressing ||
-    p.storage === StorageState.StorageRestoring;
-
-  const progressPct = (p: Pack) =>
-    dlProgress && dlProgress.packageId === p.id && dlProgress.total > 0
-      ? (dlProgress.progress / dlProgress.total) * 100
-      : 0;
-
-  // unix seconds or milliseconds
-  const toDate = (ts: number) => new Date(ts < 1e12 ? ts * 1000 : ts);
-  const ago = (ts: number) =>
-    ts ? formatDistanceToNow(toDate(ts), { addSuffix: true }) : "-";
-
-  const initials = (s: string) => s.slice(0, 2).toUpperCase();
-
-  const providerNames: Record<string, string> = { gamebanana: "GameBanana" };
-  const providerName = $derived(
-    providerNames[submission.provider] ?? submission.provider,
-  );
-
-  const downloads = $derived(files.reduce((n, f) => n + f.downloadCount, 0));
-
-  const authorUrl = $derived(
-    submission.provider === "gamebanana" && submission.authorRemoteId
-      ? `https://gamebanana.com/members/${submission.authorRemoteId}`
-      : "",
-  );
-
-  let heroQuery = $state("");
-
-  const filteredCharacters = $derived(
-    Object.entries(characters).filter(([name]) =>
-      name.toLowerCase().includes(heroQuery.trim().toLowerCase()),
-    ),
-  );
 
   const card = "flex items-center gap-4 rounded-xl border bg-muted/30 p-4";
   const tile =
@@ -516,7 +532,7 @@
         rel="noreferrer"
         class="font-semibold text-primary hover:underline"
       >
-        View Post on {providerName}
+        View Post on {submission.provider}
       </a>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -585,6 +601,39 @@
           {@render fileRow(pkg)}
         {/each}
       </section>
+    </TabsContent>
+
+    <TabsContent value="3d" class="mt-4">
+      <section class="rounded-2xl border bg-card p-8 text-muted-foreground">
+        Install to view in 3d.
+      </section>
+      <Select.Root
+        type="single"
+        value={localMod?.packages?.at(0)?.id ?? ""}
+        onValueChange={(v) => (selectedPackPreviewId = v)}
+      >
+        <Select.Trigger
+          class="h-7 w-full border-0 bg-transparent p-0 font-mono font-semibold shadow-none"
+        >
+          {selectedPackPreviewId ? selectedPackPreviewId : "Select a pack"}
+        </Select.Trigger>
+        <Select.Content>
+          {#each localMod.packages as p (p.id)}
+            <Select.Item value={p.id} label={p.name} />
+          {/each}
+        </Select.Content>
+      </Select.Root>
+      {#if selectedPackPreviewId && previewQuery.data && previewQuery.data.payload}
+        <div class="h-800px">
+        <ModViewer
+          mod={previewQuery.data.mod}
+          pack={previewQuery.data.pack}
+          payload={previewQuery.data.payload}
+          embedded={true}
+          onClose={() => {}}
+        />
+        </div>
+      {/if}
     </TabsContent>
 
     {#each comingSoon as v (v)}

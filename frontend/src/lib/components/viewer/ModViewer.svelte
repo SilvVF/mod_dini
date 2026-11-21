@@ -21,7 +21,6 @@
   import ModViewerTogglesPanel from "./ModViewerTogglesPanel.svelte";
   import { buildAllMeshes } from "./meshFactory";
   import { compact } from "#lib/ts-ext.ts";
-  import type { Scene } from "three";
 
   interface Props {
     mod: ModSaved;
@@ -29,7 +28,6 @@
     payload: ViewerPayload;
     onClose: () => void;
     embedded?: boolean;
-    isGbPreview?: boolean;
     onInstallGbMod?: () => Promise<void>;
   }
 
@@ -39,7 +37,6 @@
     payload,
     onClose,
     embedded = false,
-    isGbPreview = false,
     onInstallGbMod,
   }: Props = $props();
 
@@ -74,7 +71,6 @@
   let retextureInfo = $derived<RetextureInfo>({
     isRetexture: !!payload.isRetexture,
     baseModelSource: payload.baseModelSource || null,
-    clues: payload.clues || [],
     candidates: payload.baseModelCandidates || [],
   });
 
@@ -102,7 +98,6 @@
       retextureInfo = {
         isRetexture: !!payload.isRetexture,
         baseModelSource: payload.baseModelSource || null,
-        clues: payload.clues || [],
         candidates: payload.baseModelCandidates || [],
       };
 
@@ -147,12 +142,12 @@
 
   function handleSetRenderMode(mode: RenderMode) {
     renderMode = mode;
-    scene!.setRenderMode(mode);
+    scene?.setRenderMode(mode);
   }
 
   function handleSetLighting(preset: LightingPreset) {
     lightingPreset = preset;
-    scene!.setLightingPreset(preset);
+    scene?.setLightingPreset(preset);
   }
 
   function handleSetToggleValue(variable: string, value: number) {
@@ -162,7 +157,7 @@
     };
 
     toggleValues = next;
-    scene!.applyToggles(next);
+    scene?.applyToggles(next);
   }
 
   function handleCycleToggle(toggle: ViewerToggle) {
@@ -177,12 +172,12 @@
     };
 
     toggleValues = next;
-    scene!.applyToggles(next);
+    scene?.applyToggles(next);
   }
 
   function toggleWireframe() {
     wireframe = !wireframe;
-    scene!.setWireframe(wireframe);
+    scene?.setWireframe(wireframe);
   }
 
   function toggleMeshVisibility(meshName: string, index: number) {
@@ -193,17 +188,17 @@
       [meshName]: next,
     };
 
-    scene!.setMeshVisibility(index, next);
+    scene?.setMeshVisibility(index, next);
   }
 
   function toggleTurntable() {
     turntableActive = !turntableActive;
-    scene!.setTurntable(turntableActive);
+    scene?.setTurntable(turntableActive);
   }
 
   function handleSelectCameraPreset(preset: CameraPreset) {
     activeCameraPreset = preset;
-    scene!.setCameraPreset(preset);
+    scene?.setCameraPreset(preset);
   }
 
   function handleToggleSolo(targetMeshName: string) {
@@ -211,7 +206,7 @@
       const restored = preSoloVisibility;
 
       builtMeshes.forEach((mesh, index) => {
-        scene!.setMeshVisibility(index, restored[mesh.name] ?? true);
+        scene?.setMeshVisibility(index, restored[mesh.name] ?? true);
       });
 
       meshVisibility = restored;

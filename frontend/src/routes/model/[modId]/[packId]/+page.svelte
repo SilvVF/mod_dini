@@ -1,5 +1,5 @@
 <script>
-  import ModViewerModel from "#lib/components/viewer/ModViewerModel.svelte";
+  import ModViewerModel from "#lib/components/viewer/ModViewer.svelte";
   import { page } from "$app/state";
 </script>
 

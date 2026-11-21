@@ -15,7 +15,6 @@ export interface BuiltMesh {
 export interface RetextureInfo {
   isRetexture: boolean;
   baseModelSource: string | null;
-  clues: string[];
   candidates: BaseModelCandidate[];
 }
 

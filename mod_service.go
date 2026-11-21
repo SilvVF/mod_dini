@@ -489,6 +489,8 @@ func expectedPath(paths packPaths, state StorageState) string {
 
 func (ms *ModService) Remove(modId string, deleteKeybinds bool) error {
 
+	ms.sweeper.CancelAndWait(modId)
+
 	unlock := ms.lockMod(modId)
 	defer unlock()
 
@@ -578,7 +580,7 @@ func (ms *ModService) Save(toolId ToolID, sub Submission, files []SubmissionFile
 		})
 	}
 
-	tool, local, hero, ok := ms.resolveCharacter(sub.Provider, sub.Category)
+	tool, local, hero, ok := ms.resolveModMeta(sub.Provider, sub.Category)
 	if ok {
 		mod.ToolId = tool
 		mod.CharacterId = local
@@ -602,7 +604,7 @@ func (ms *ModService) Save(toolId ToolID, sub Submission, files []SubmissionFile
 	return ms.downloadMod(ms.app.Context(), mod)
 }
 
-func (ms *ModService) resolveCharacter(providerID, category string) (toolID, local, hero string, ok bool) {
+func (ms *ModService) resolveModMeta(providerID, category string) (toolID, local, hero string, ok bool) {
 	if category == "" {
 		return "", "", "", false
 	}
@@ -634,7 +636,7 @@ func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
 		return p, err
 	}
 
-	if toolId, _, character, ok := ms.resolveCharacter(providerId, p.Submission.Category); ok {
+	if toolId, _, character, ok := ms.resolveModMeta(providerId, p.Submission.Category); ok {
 		p.ResolvedToolId = &toolId
 		p.Submission.Hero = &character
 	}
