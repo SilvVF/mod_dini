@@ -13,17 +13,9 @@
   import { Input } from "#lib/components/ui/input/index.ts";
   import Switch from "#lib/components/ui/switch/switch.svelte";
   import { cn } from "#lib/utils.ts";
-
   import { Search, RefreshCw, SlidersHorizontal } from "@lucide/svelte";
   import { untrack } from "svelte";
 
-  type Submission = NonNullable<
-    Awaited<ReturnType<typeof ModService.List>>["submissions"]
-  >[number];
-
-  type Indexed = { submission: Submission; haystack: string };
-
-  // Row height includes the bottom gap (pb-4 on each row).
   const ROW_HEIGHT = 380;
   const GAP_X = 16;
   const MIN_CARD_WIDTH = 280;
@@ -35,10 +27,12 @@
 
   let searchInput = $state("");
   let search = $state("");
-  let heroFilter = $state("all");
-  let sortBy = $state("updated");
+  let subcategory = $state("all");
+  let sortBy = $state("MostLiked");
   let showNSFW = $state(true);
   let showObsolete = $state(true);
+
+  const subcategories = $derived(page.data.subcategories);
 
   let container = $state<HTMLDivElement>();
   let containerWidth = $state(0);
@@ -52,12 +46,14 @@
 
   const query = createInfiniteQuery(() =>
     infiniteQueryOptions({
-      queryKey: ["source", provider, category],
+      queryKey: ["source", provider, category, sortBy, search, subcategory],
       initialPageParam: Number(page.url.searchParams.get("page") ?? 1),
       queryFn: ({ pageParam }) =>
         ModService.List({
           provider: provider!,
-          cat: category!,
+          cat: subcategory === "all" ? category! : subcategory,
+          query: search,
+          sort: sortBy,
           page: pageParam,
         }),
       getNextPageParam: (lastPage) =>
@@ -67,78 +63,14 @@
     }),
   );
 
-  // Dedupe + precompute a lowercase search haystack once per data change,
-  // instead of lowercasing four fields per item on every keystroke.
-  const indexed = $derived.by<Indexed[]>(() => {
-    const unique = new Map<Submission["submissionId"], Indexed>();
-
-    for (const result of query.data?.pages ?? []) {
-      for (const submission of result.submissions ?? []) {
-        if (!submission || unique.has(submission.submissionId)) continue;
-
-        unique.set(submission.submissionId, {
-          submission,
-          haystack: [
-            submission.name,
-            submission.description,
-            submission.author,
-            submission.hero,
-          ]
-            .filter(Boolean)
-            .join("\n")
-            .toLowerCase(),
-        });
-      }
-    }
-
-    return [...unique.values()];
-  });
-
-  const heroes = $derived(
-    [
-      ...new Set(
-        indexed
-          .map(({ submission }) => submission.hero?.trim())
-          .filter((hero): hero is string => Boolean(hero)),
-      ),
-    ].sort((a, b) => a.localeCompare(b)),
+  const filteredSubmissions = $derived(
+    query.data?.pages?.map((p) => p.submissions ?? [])?.flat() ?? [],
   );
 
-  const filteredSubmissions = $derived.by<Submission[]>(() => {
-    const needle = search.trim().toLowerCase();
-
-    // Single pass for all filters.
-    const result: Submission[] = [];
-    for (const { submission, haystack } of indexed) {
-      if (needle && !haystack.includes(needle)) continue;
-      if (!showNSFW && submission.isNsfw) continue;
-      if (!showObsolete && submission.isObsolete) continue;
-      if (heroFilter !== "all" && submission.hero?.trim() !== heroFilter)
-        continue;
-      result.push(submission);
-    }
-
-    switch (sortBy) {
-      case "name":
-        result.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-        break;
-      case "views":
-        result.sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0));
-        break;
-      case "likes":
-        result.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
-        break;
-      case "updated":
-        result.sort(
-          (a, b) => (b.remoteUpdatedAt ?? 0) - (a.remoteUpdatedAt ?? 0),
-        );
-        break;
-    }
-
-    return result;
-  });
-
   const rowCount = $derived(Math.ceil(filteredSubmissions.length / columns));
+
+  // TODO
+  const heros: string[] = [];
 
   // Virtualize *rows*; each row renders `columns` cards. Row height is fixed,
   // so no per-item measuring is needed.
@@ -169,7 +101,7 @@
   // Debounce search input.
   $effect(() => {
     const value = searchInput;
-    const timeout = setTimeout(() => (search = value), 150);
+    const timeout = setTimeout(() => (search = value), 300);
     return () => clearTimeout(timeout);
   });
 
@@ -193,7 +125,7 @@
   // Jump back to the top when the result set is reshaped by the controls.
   $effect(() => {
     void search;
-    void heroFilter;
+    void subcategory;
     void sortBy;
     void showNSFW;
     void showObsolete;
@@ -203,7 +135,7 @@
 
   // Sorting is not a filter; these are.
   const filtersActive = $derived(
-    search.trim() !== "" || heroFilter !== "all" || !showNSFW || !showObsolete,
+    search.trim() !== "" || subcategory !== "all" || !showNSFW || !showObsolete,
   );
 
   // Infinite scroll: prefetch when the last rendered row nears the end,
@@ -261,27 +193,34 @@
           />
         </div>
 
-        <Select.Root type="single" bind:value={heroFilter}>
-          <Select.Trigger class="w-full md:w-[200px]">
+        <Select.Root type="single" bind:value={subcategory}>
+          <Select.Trigger class="w-full md:w-50">
             <Select.Value placeholder="All characters" />
           </Select.Trigger>
           <Select.Content>
             <Select.Item value="all">All characters</Select.Item>
-            {#each heroes as hero (hero)}
-              <Select.Item value={hero}>{hero}</Select.Item>
+            {#each subcategories as subcat}
+              <Select.Item value={subcat.category}>
+                <img
+                  src={subcat.iconUrl}
+                  alt=""
+                  class="size-5 rounded-full object-cover"
+                />
+                {subcat.name}
+              </Select.Item>
             {/each}
           </Select.Content>
         </Select.Root>
 
         <Select.Root type="single" bind:value={sortBy}>
-          <Select.Trigger class="w-full md:w-[170px]">
+          <Select.Trigger class="w-full md:w-50">
             <Select.Value placeholder="Sort by" />
           </Select.Trigger>
           <Select.Content>
-            <Select.Item value="updated">Recently updated</Select.Item>
-            <Select.Item value="name">Name</Select.Item>
-            <Select.Item value="views">Most viewed</Select.Item>
-            <Select.Item value="likes">Most liked</Select.Item>
+            <Select.Item value="NewAndUpdated">Recently updated</Select.Item>
+            <Select.Item value="Alphabetically">Name</Select.Item>
+            <Select.Item value="MostViewed">Most viewed</Select.Item>
+            <Select.Item value="MostLiked">Most liked</Select.Item>
           </Select.Content>
         </Select.Root>
       </div>

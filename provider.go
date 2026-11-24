@@ -8,12 +8,22 @@ import (
 type Provider interface {
 	ID() string
 	List(ctx context.Context, p ListParams) (SubmissionList, error)
+	Subcategories(ctx context.Context, category string) (ProviderSubcategoryList, error)
 	Page(ctx context.Context, submissionID string) (SubmissionPage, error)
+}
+
+type ProviderSubcategoryList []struct {
+	Name      string `json:"name"`
+	Category  string `json:"category"`
+	IconURL   string `json:"iconUrl"`
+	ItemCount int    `json:"itemCount"`
 }
 
 type ListParams struct {
 	Provider string `json:"provider"`
 	Cat      string `json:"cat"`
+	Query    string `json:"query"`
+	Sort     string `json:"sort"`
 	Page     int    `json:"page"`
 }
 

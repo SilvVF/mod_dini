@@ -261,6 +261,25 @@ func (g *GbApi) CategoryContent(query CategoryQuery) (CategoryResponse, error) {
 	return category, nil
 }
 
+type SubcategoryList []struct {
+	SName      string `json:"_sName"`
+	SURL       string `json:"_sUrl"`
+	SIconURL   string `json:"_sIconUrl"`
+	NItemCount int    `json:"_nItemCount"`
+}
+
+func (g *GbApi) Subcategories(cat string) (SubcategoryList, error) {
+	res, err := client.Get(fmt.Sprintf("https://gamebanana.com/apiv12/ModCategory/%s/SubCategories", cat))
+	if err != nil {
+		return SubcategoryList{}, err
+	}
+
+	var sublist SubcategoryList
+	err = json.NewDecoder(res.Body).Decode(&sublist)
+
+	return sublist, err
+}
+
 type SubmissionPageResponse struct {
 	AMetadata struct {
 		NRecordCount int  `json:"_nRecordCount"`

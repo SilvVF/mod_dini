@@ -17,11 +17,37 @@ func NewGameBanana(api *GbApi) *GameBanana { return &GameBanana{api: api} }
 
 func (g *GameBanana) ID() string { return "gamebanana" }
 
+func (g *GameBanana) Subcategories(ctx context.Context, category string) (ProviderSubcategoryList, error) {
+	res, err := g.api.Subcategories(category)
+	if err != nil {
+		return ProviderSubcategoryList{}, err
+	}
+
+	psl := make(ProviderSubcategoryList, 0)
+
+	for _, item := range res {
+		psl = append(psl, struct {
+			Name      string "json:\"name\""
+			Category  string "json:\"category\""
+			IconURL   string "json:\"iconUrl\""
+			ItemCount int    "json:\"itemCount\""
+		}{
+			item.SName,
+			item.SURL[strings.LastIndex(item.SURL, "/")+1:],
+			item.SIconURL,
+			item.NItemCount,
+		})
+	}
+
+	return psl, nil
+}
+
 func (g *GameBanana) List(ctx context.Context, p ListParams) (SubmissionList, error) {
 	q := NewCategoryQuery()
 	q.Page = max(p.Page, 1)
 	q.ID = p.Cat
-	q.Sort = MostLiked
+	q.Name = p.Query
+	q.Sort = Sort(p.Sort)
 	q.PerPage = 50
 
 	res, err := g.api.CategoryContent(q)

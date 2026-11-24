@@ -73,6 +73,10 @@ export function Settings(): $CancellablePromise<$models.Setting[] | null> {
     return $Call.ByID(1348616436);
 }
 
+export function Subcategories(provider: string, category: string): $CancellablePromise<$models.ProviderSubcategoryList> {
+    return $Call.ByID(3903836073, provider, category);
+}
+
 export function ToolDir(tool: string): $CancellablePromise<string> {
     return $Call.ByID(1991256346, tool);
 }

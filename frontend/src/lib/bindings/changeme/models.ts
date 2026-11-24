@@ -124,6 +124,8 @@ export enum Kind {
 export interface ListParams {
     "provider": string;
     "cat": string;
+    "query": string;
+    "sort": string;
     "page": number;
 }
 
@@ -227,6 +229,8 @@ export interface PackPreview {
     "mod": ModSaved;
     "pack": Pack;
 }
+
+export type ProviderSubcategoryList = {"name": string, "category": string, "iconUrl": string, "itemCount": number}[] | null;
 
 export interface RootFolder {
     "id": ToolID;

@@ -646,6 +646,15 @@ func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
 	return p, nil
 }
 
+func (ms *ModService) Subcategories(provider string, category string) (ProviderSubcategoryList, error) {
+	prov, err := ms.providers.Get(provider)
+	if err != nil {
+		return ProviderSubcategoryList{}, err
+	}
+
+	return prov.Subcategories(context.Background(), category)
+}
+
 func (ms *ModService) List(p ListParams) (SubmissionList, error) {
 	log.Println("list params", p)
 

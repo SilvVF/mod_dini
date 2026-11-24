@@ -50,6 +50,11 @@ type DownloadURLResponse struct {
 	} `json:"data"`
 }
 
+// todo
+func (h *HuiHuiProvider) Subcategories(ctx context.Context, category string) (ProviderSubcategoryList, error) {
+	return ProviderSubcategoryList{}, nil
+}
+
 func (h *HuiHuiProvider) getDownloadURL(
 	ctx context.Context,
 	fileURI string,

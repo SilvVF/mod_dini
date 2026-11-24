@@ -29,6 +29,7 @@ export type {
     Option,
     Pack,
     PackPreview,
+    ProviderSubcategoryList,
     RootFolder,
     Setting,
     SortConfig,
