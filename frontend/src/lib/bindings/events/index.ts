@@ -29,6 +29,11 @@ export const ModUpdate = "mod-update";
 export const ModsLoaded = "mods-loaded";
 
 /**
+ * Name of the custom event "process-event".
+ */
+export const ProcessEvent = "process-event";
+
+/**
  * Name of the custom event "setting-updated".
  */
 export const SettingUpdated = "setting-updated";

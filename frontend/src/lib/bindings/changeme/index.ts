@@ -8,6 +8,7 @@ export {
 
 export {
     Category,
+    EventType,
     InstallState,
     Kind,
     SortBy,
@@ -29,6 +30,7 @@ export type {
     Option,
     Pack,
     PackPreview,
+    ProcessEvent,
     ProviderSubcategoryList,
     RootFolder,
     Setting,

@@ -1,4 +1,4 @@
-package modpreview
+package mod3d
 
 const (
 	DefaultPositionStride = 40

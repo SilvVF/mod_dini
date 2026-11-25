@@ -3,7 +3,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as modpreview$0 from "./modpreview/models.js";
+import * as mod3d$0 from "./mod3d/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as json$0 from "../encoding/json/models.js";
@@ -60,6 +60,16 @@ export interface DataProgress {
     "total": number;
     "progress": number;
 }
+
+export enum EventType {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero = 0,
+
+    ProcessStarted = 0,
+    ProcessStopped = 1,
+};
 
 export interface FolderConfig {
     "visible": boolean;
@@ -225,9 +235,15 @@ export interface Pack {
 }
 
 export interface PackPreview {
-    "payload": modpreview$0.ViewerPayload | null;
+    "payload": mod3d$0.ViewerPayload | null;
     "mod": ModSaved;
     "pack": Pack;
+}
+
+export interface ProcessEvent {
+    "type": EventType;
+    "pid": number;
+    "name": string;
 }
 
 export type ProviderSubcategoryList = {"name": string, "category": string, "iconUrl": string, "itemCount": number}[] | null;

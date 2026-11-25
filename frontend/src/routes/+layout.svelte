@@ -4,7 +4,7 @@
   import type { LayoutProps } from "./$types";
   import { setSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import Button from "#lib/components/ui/button/button.svelte";
-  import { Box, Globe, Globe2, Keyboard, Settings } from "@lucide/svelte";
+  import { Box, Globe, Globe2, Keyboard, LoaderCircle, Settings } from "@lucide/svelte";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { SvelteQueryDevtools } from "@tanstack/svelte-query-devtools";
   import {
@@ -24,18 +24,21 @@
     setActiveTool,
     tools,
   } from "#lib/state/app.svelte.ts";
+  import { getProcessContext, setProcessContext } from "#lib/contexts/process.svelte.ts";
   let { children, data }: LayoutProps = $props();
 
   const queryClient = new QueryClient();
 
   setSavedModsContext(() => data.mods);
   setSettingsContext(() => data.settings);
+  setProcessContext();
 
   const settings = getSettingsContext();
   $effect(() => {
     appState.activeTool = settings.get("tool.active")?.value;
   });
 
+  const processState = getProcessContext();
   const activeToolConfig = $derived(
     tools.find((t) => t.id === appState.activeTool)!,
   );
@@ -103,14 +106,25 @@
             onclick={() => setActiveTool(tool.id)}
             aria-label={tool.id}
           >
-            <img
-              src={tool.src}
-              alt={tool.id}
-              class={cn(
-                "size-9 rounded-lg object-cover transition-opacity",
-                appState.activeTool === tool.id ? "opacity-100" : "opacity-50",
-              )}
-            />
+            <span class="relative flex size-9 items-center justify-center">
+              <img
+                src={tool.src}
+                alt={tool.id}
+                class={cn(
+                  "size-9 rounded-lg object-cover transition-opacity",
+                  appState.activeTool === tool.id
+                    ? "opacity-100"
+                    : "opacity-50",
+                )}
+              />
+
+              {#if processState.running(tool.process)}
+                <LoaderCircle
+                  class="absolute size-5 animate-spin text-primary"
+                  strokeWidth={2.5}
+                />
+              {/if}
+            </span>
           </Button>
         {/each}
         {#each activeToolConfig.providers as provider}

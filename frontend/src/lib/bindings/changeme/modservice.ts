@@ -61,6 +61,10 @@ export function Remove(modId: string, deleteKeybinds: boolean): $CancellableProm
     return $Call.ByID(3788860665, modId, deleteKeybinds);
 }
 
+export function RunningProcesses(): $CancellablePromise<{ [_ in string]?: $models.ProcessEvent } | null> {
+    return $Call.ByID(1051236193);
+}
+
 export function Save(toolId: $models.ToolID, sub: $models.Submission, files: $models.SubmissionFile[] | null, selected: $models.Pack[] | null): $CancellablePromise<void> {
     return $Call.ByID(1363098684, toolId, sub, files, selected);
 }

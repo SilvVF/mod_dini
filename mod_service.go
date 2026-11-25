@@ -1,7 +1,7 @@
 package main
 
 import (
-	"changeme/modpreview"
+	"changeme/mod3d"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,6 +30,7 @@ type ModService struct {
 	sweeper        *Sweeper
 	settings       *SettingsStore
 	modLocks       sync.Map
+	pw             *ProcessWatcher
 }
 
 func NewModService(app *application.App, db *bolt.DB) *ModService {
@@ -48,6 +49,7 @@ func NewModService(app *application.App, db *bolt.DB) *ModService {
 			"gamebanana": NewGameBanana(&GbApi{}),
 			"huihui":     &HuiHuiProvider{},
 		},
+		pw: NewProcessWatcher(time.Second),
 	}
 
 	ms.ks = &KeybindStore{
@@ -106,14 +108,29 @@ func (ms *ModService) ServiceStartup(ctx context.Context, options application.Se
 	}()
 
 	go ms.sweeper.Run()
+	processEvents := ms.pw.Watch(ctx, "GenshinImpact.exe", "StarRail.exe", "ZenlessZoneZero.exe", "Client-Win64-Shipping.exe")
+
+	go func() {
+		for {
+			event, ok := <-processEvents
+			if !ok {
+				break
+			}
+			ms.app.Event.Emit("process-event", event)
+		}
+	}()
 
 	return nil
 }
 
+func (ms *ModService) RunningProcesses() map[string]ProcessEvent {
+	return ms.pw.Current("GenshinImpact.exe", "StarRail.exe", "ZenlessZoneZero.exe", "Client-Win64-Shipping.exe")
+}
+
 type PackPreview struct {
-	Payload *modpreview.ViewerPayload `json:"payload"`
-	Mod     ModSaved                  `json:"mod"`
-	Pack    Pack                      `json:"pack"`
+	Payload *mod3d.ViewerPayload `json:"payload"`
+	Mod     ModSaved             `json:"mod"`
+	Pack    Pack                 `json:"pack"`
 }
 
 func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
@@ -138,13 +155,13 @@ func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 		return PackPreview{}, err
 	}
 
-	baseModelMods := ms.getGaseModelMods(mod)
+	baseModelMods := ms.getBaseModelMods(mod)
 
-	payload, err := modpreview.ParseMod(
+	payload, err := mod3d.ParseMod(
 		expectedPath(paths, pack.Storage),
 		nil,
 		baseModelMods,
-		modpreview.QualityHigh,
+		mod3d.QualityHigh,
 	)
 
 	return PackPreview{
@@ -154,8 +171,8 @@ func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 	}, err
 }
 
-func (ms *ModService) getGaseModelMods(mod ModSaved) []modpreview.BaseModelMod {
-	baseModelMods := []modpreview.BaseModelMod{}
+func (ms *ModService) getBaseModelMods(mod ModSaved) []mod3d.BaseModelMod {
+	baseModelMods := []mod3d.BaseModelMod{}
 	mods, err := ms.Initial()
 	if err != nil {
 		return baseModelMods
@@ -175,7 +192,7 @@ func (ms *ModService) getGaseModelMods(mod ModSaved) []modpreview.BaseModelMod {
 				if err != nil {
 					continue
 				}
-				baseModelMods = append(baseModelMods, modpreview.BaseModelMod{
+				baseModelMods = append(baseModelMods, mod3d.BaseModelMod{
 					Provider: m.Submission.Provider,
 					ModID:    mod.ID,
 					FileID:   p.FileID,

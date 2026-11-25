@@ -16,6 +16,7 @@ declare module "@wailsio/runtime" {
             "mod-removed": string;
             "mod-update": main$0.ModSaved;
             "mods-loaded": { [_ in `${number}`]?: main$0.ModSaved } | null;
+            "process-event": main$0.ProcessEvent;
             "setting-updated": main$0.Setting;
         }
     }

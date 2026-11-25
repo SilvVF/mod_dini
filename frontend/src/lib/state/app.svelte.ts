@@ -10,21 +10,25 @@ const validIds = ["zzmi", "wwmi", "srmi", "gimi"];
 export const tools = [
   {
     id: "gimi",
+    process: "genshinimpact.exe",
     src: "https://images.gamebanana.com/img/ico/games/686d7fdcbeb5a.png",
     providers: ["gamebanana"],
   },
   {
     id: "wwmi",
+    process: "",
     src: "https://images.gamebanana.com/img/ico/games/686bf76048ba2.png",
     providers: ["gamebanana", "huihui"],
   },
   {
     id: "zzmi",
+    process: "zenlesszonezero.exe",
     src: "https://images.gamebanana.com/img/ico/games/657d72ea51567.png",
     providers: ["gamebanana", "huihui"],
   },
   {
     id: "srmi",
+    process: "starrail.exe",
     src: "https://images.gamebanana.com/img/ico/games/686d7fe451b81.png",
     providers: ["gamebanana", "huihui"],
   },

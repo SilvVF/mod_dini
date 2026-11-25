@@ -26,6 +26,7 @@ func init() {
 	application.RegisterEvent[map[int]ModSaved]("mods-loaded")
 	application.RegisterEvent[DataProgress]("mod-download-progress")
 	application.RegisterEvent[Setting]("setting-updated")
+	application.RegisterEvent[ProcessEvent]("process-event")
 }
 
 func main() {
