@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { Box, Pencil, Star, X, ArrowUp, StickyNote } from "@lucide/svelte";
+  import {
+    Box,
+    Pencil,
+    Star,
+    X,
+    ArrowUp,
+    StickyNote,
+    Eye,
+  } from "@lucide/svelte";
   import * as Resizable from "#lib/components/ui/resizable/index.js";
   import { Button } from "../ui/button/index.js";
   import { Label } from "../ui/label/index.js";
@@ -8,12 +16,14 @@
   import { Textarea } from "../ui/textarea/index.js";
   import {
     InstallState,
+    type ModKeyBindPreset,
     type ModSaved,
     type Pack,
   } from "#lib/bindings/changeme/models.js";
   import { Checkbox } from "../ui/checkbox/index.js";
   import { formatSize } from "./utils.js";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.js";
+  import Keybinds from "./Keybinds.svelte";
 
   let {
     mod,
@@ -24,9 +34,11 @@
     onopenfolder,
     onopenlink,
     onTogglePack,
+    keybindData,
   }: {
     mod: ModSaved;
     onTogglePack: (pack: Pack) => void;
+    keybindData?: ModKeyBindPreset[];
     folders?: string[];
     imageSize?: number;
     onclose?: () => void;
@@ -36,6 +48,13 @@
   } = $props();
 
   let noteOpen = $state(false);
+  let hideDescription = $derived(
+    localStorage.getItem("desc-hide-" + mod.id) === "1",
+  );
+
+  $effect(() => {
+    localStorage.setItem("desc-hide-" + mod.id, hideDescription ? "1" : "0");
+  });
   const hasNote = $derived(mod.submission.description.trim().length > 0);
   const anyInstalled = $derived(
     mod.packages?.some((p) => p.state === InstallState.InstallReady),
@@ -221,13 +240,15 @@
               </div>
             </div>
 
-            {#if noteOpen || hasNote}
-              <Textarea
-                value={mod.submission.description}
-                rows={3}
-                placeholder="Write a note about this mod"
-                aria-label="Note"
-              />
+            <Button
+              onclick={() => {
+                hideDescription = !hideDescription;
+              }}
+            >
+              <Eye />
+            </Button>
+            {#if !hideDescription && (noteOpen || hasNote)}
+              {@html mod.submission.description}
             {:else}
               <button
                 type="button"
@@ -239,6 +260,19 @@
             {/if}
           </section>
         </div>
+        {#if keybindData}
+          <Keybinds
+            data={[
+              {
+                mod,
+                name: "",
+                presets: keybindData,
+              },
+            ]}
+            toolId={mod.toolId}
+            title=""
+          />
+        {/if}
       </div>
     </Resizable.Pane>
   </Resizable.PaneGroup>

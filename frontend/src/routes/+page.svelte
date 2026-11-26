@@ -4,7 +4,13 @@
   import * as Sidebar from "#lib/components/ui/sidebar/index.ts";
   import { Input } from "#lib/components/ui/input/index.ts";
   import { Button } from "#lib/components/ui/button/index.ts";
-  import { ChevronDown, Layers, Search, X } from "@lucide/svelte";
+  import {
+    AlertTriangle,
+    ChevronDown,
+    Layers,
+    Search,
+    X,
+  } from "@lucide/svelte";
   import { Collapsible } from "bits-ui";
   import {
     StorageState,
@@ -22,10 +28,13 @@
     type SelectedItem,
   } from "#lib/contexts/group-mods.ts";
   import LibraryConfig from "#lib/components/dini/LibraryConfig.svelte";
-  import type { GameConfig } from "#lib/components/dini/types.ts";
+  import type { Conflict, GameConfig } from "#lib/components/dini/types.ts";
   import { formatSize } from "#lib/components/dini/utils.ts";
   import { appState, toolBanner, toolName } from "#lib/state/app.svelte.ts";
   import { ModService } from "#lib/bindings/changeme/index.ts";
+  import { tick } from "svelte";
+  import * as Dialog from "#lib/components/ui/dialog/index.ts";
+  import Switch from "#lib/components/ui/switch/switch.svelte";
 
   let { data }: PageProps = $props();
 
@@ -33,9 +42,6 @@
 
   type ModFilter = "all" | "enabled" | "disabled";
   type SidebarTab = "all" | "with-mods";
-
-  const isEnabled = (m: ModSaved) =>
-    m.packages?.some((p) => p.enabled) ?? false;
 
   const gridClass = `grid w-full grid-cols-1 items-stretch gap-4
     sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5`;
@@ -50,7 +56,11 @@
   let modFilter = $state<ModFilter>("all");
   let modSearch = $state("");
   let modSearchEl = $state<HTMLInputElement | null>(null);
-  let groupMods = $state(true);
+  let groupMods = $state(localStorage.getItem("groupMods") === "1");
+
+  $effect(() => {
+    localStorage.setItem("groupMods", groupMods ? "1" : "0");
+  });
 
   const toolId = $derived(appState.activeTool);
   const rootFolder = $derived(data.rootFolder[toolId]);
@@ -95,6 +105,51 @@
   const groupedMods = $derived(
     groupModsByFolders(mods, rootFolder, charactersRecord, subfoldersRecord),
   );
+
+  const isActivePack = (p: Pack) => p.storage === StorageState.StorageActive;
+
+  const activePackCount = (m: ModSaved) =>
+    (m.packages ?? []).filter(isActivePack).length;
+
+  const isEnabled = (m: ModSaved) => activePackCount(m) > 0;
+
+  const conflicts = $derived.by<Conflict[]>(() => {
+    const list: Conflict[] = [];
+    for (const group of groupedMods) {
+      if (!(group.folder.name in charactersRecord)) continue;
+      const on = group.items.filter(isEnabled);
+      const packCount = sumBy(on, activePackCount);
+      if (packCount > 1) {
+        list.push({
+          name: group.name,
+          folderName: group.folder.name,
+          mods: on,
+          packCount,
+        });
+      }
+    }
+    return list;
+  });
+
+  // every mod that has an enabled pack on a conflicting character
+  const conflictModIds = $derived(
+    new Set(conflicts.flatMap((c) => c.mods.map((m) => m.id))),
+  );
+  let conflictsOpen = $state(false);
+  let hideConflicts = $state(localStorage.getItem("hideConflicts") === "1");
+
+  $effect(() => {
+    localStorage.setItem("hideConflicts", hideConflicts ? "1" : "0");
+  });
+
+  const showConflictUi = $derived(!hideConflicts);
+
+  async function openConflictMod(c: Conflict, mod: ModSaved) {
+    conflictsOpen = false;
+    selectedItemId = c.folderName;
+    await tick(); // let the "reset selectedModId" effect run first
+    selectedModId = mod.id;
+  }
 
   // enabled / total mods per folder (keyed by folder name)
   const folderStats = $derived.by(() => {
@@ -348,6 +403,7 @@
       folder: group.folder,
       local: mod,
     }}
+    conflict={showConflictUi && conflictModIds.has(mod.id)}
     onClick={() => hanldeModCardClick(mod)}
     onSettings={() => {}}
     onDelete={() => handleRemoveMod(mod)}
@@ -564,7 +620,25 @@
                 </button>
               {/if}
             </div>
-
+            <Button
+              variant="ghost"
+              size="icon"
+              class="relative h-8 w-8 shrink-0"
+              aria-label="Mod conflicts"
+              title="Mod conflicts"
+              onclick={() => (conflictsOpen = true)}
+            >
+              <AlertTriangle
+                class="size-4 {conflicts.length > 0 ? 'text-amber-500' : ''}"
+              />
+              {#if showConflictUi && conflicts.length > 0}
+                <span
+                  class="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-semibold text-white"
+                >
+                  {conflicts.length}
+                </span>
+              {/if}
+            </Button>
             <Button
               variant={groupMods ? "secondary" : "ghost"}
               size="sm"
@@ -637,3 +711,60 @@
     </Resizable.Pane>
   </Resizable.PaneGroup>
 </div>
+
+<Dialog.Root bind:open={conflictsOpen}>
+  <Dialog.Content class="sm:max-w-xl">
+    <Dialog.Header>
+      <Dialog.Title>
+        {conflicts.length} character{conflicts.length === 1 ? "" : "s"} with several
+        mods or packs on
+      </Dialog.Title>
+      <Dialog.Description>
+        These characters have more than one mod or pack on. They usually clash
+        in game, so keep one on for each. Click a name to open it.
+      </Dialog.Description>
+    </Dialog.Header>
+
+    {#if conflicts.length > 0}
+      <div class="flex max-h-80 flex-col gap-3 overflow-y-auto">
+        {#each conflicts as c (c.folderName)}
+          <p class="mb-2 text-sm text-muted-foreground">
+            {c.name} · {c.packCount} packs on
+            {#if c.mods.length > 1}across {c.mods.length} mods{/if}
+          </p>
+          <div class="flex flex-wrap gap-2">
+            {#each c.mods as mod (mod.id)}
+              {@const n = activePackCount(mod)}
+              <button
+                type="button"
+                class="rounded-full bg-muted px-3 py-1.5 text-sm font-semibold hover:bg-muted/70"
+                onclick={() => openConflictMod(c, mod)}
+              >
+                {mod.submission?.name ?? mod.id}
+                {#if n > 1}
+                  <span class="font-normal text-muted-foreground"
+                    >· {n} packs</span
+                  >
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="flex items-center justify-between gap-4 border-t pt-3">
+      <div>
+        <p class="text-sm font-semibold">Don't highlight conflicts</p>
+        <p class="text-xs text-muted-foreground">
+          Hides the yellow tag on mods and the red number on the warning button.
+          This list still works.
+        </p>
+      </div>
+      <Switch
+        bind:checked={hideConflicts}
+        aria-label="Don't highlight conflicts"
+      />
+    </div>
+  </Dialog.Content>
+</Dialog.Root>

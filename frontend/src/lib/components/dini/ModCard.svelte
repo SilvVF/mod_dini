@@ -37,10 +37,18 @@
     onDelete?: (item: GroupedCharacter) => void;
     onToggle?: (item: GroupedCharacter, enabled: boolean) => void;
     onRetry?: (item: GroupedCharacter) => void;
+    conflict?: boolean;
   }
 
-  let { item, onClick, onSettings, onDelete, onToggle, onRetry }: Props =
-    $props();
+  let {
+    item,
+    onClick,
+    onSettings,
+    onDelete,
+    onToggle,
+    onRetry,
+    conflict,
+  }: Props = $props();
 
   const INSTALLING = [
     InstallState.InstallQueued,
@@ -118,6 +126,16 @@
   onclick={onClick}
 >
   <div class="relative aspect-4/3 overflow-hidden">
+    {#if conflict && enabled && status === "ready"}
+      <span
+        class="absolute z-10 left-2 top-2 rounded-md bg-amber-300 px-2 py-0.5 text-xs font-semibold text-amber-950 shadow-sm"
+        title={packs.filter((p) => p.enabled).length > 1
+          ? "More than one pack of this mod is on"
+          : "Another mod for this character is also on"}
+      >
+        Conflict
+      </span>
+    {/if}
     {#if submission?.thumbnailUrl}
       <img
         src={submission.thumbnailUrl}

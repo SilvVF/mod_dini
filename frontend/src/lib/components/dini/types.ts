@@ -1,13 +1,20 @@
 // Plain data shapes only. The sidebar never fetches or mutates anything itself:
 // everything comes in through props and every action goes out through callback props.
 
-import type { ModSaved, Pack, Preset } from "#lib/bindings/changeme/models.ts";
+import type { CharacterFolder, ModSaved, Pack, Preset } from "#lib/bindings/changeme/models.ts";
 
 export interface Game {
   id: string;
   name: string;
   image: string;
 }
+
+export type Conflict = {
+  name: string;
+  folderName: string;
+  mods: ModSaved[]; // mods with at least one enabled pack
+  packCount: number; // total enabled packs across those mods
+};
 
 export interface GameStats {
   loaded: number;
