@@ -1,15 +1,15 @@
-import { ModService } from "#lib/bindings/changeme/index.ts";
 import type { PageLoad } from "./$types";
+import { queryClient, submissionPageQuery } from "#lib/components/dini/utils.ts";
 
 export const load: PageLoad = async ({ params }) => {
-  const { resolvedToolId, submission, submissionFiles } = await ModService.Page(
-    params.provider,
-    params.id,
+
+  const data = await queryClient.query(
+    submissionPageQuery(params.provider, params.id),
   );
 
   return {
-    resolvedToolId: resolvedToolId,
-    submission: submission,
-    files: submissionFiles ?? [],
+    resolvedToolId: data.resolvedToolId,
+    submission: data.submission,
+    files: data.submissionFiles ?? [],
   };
 };

@@ -7,23 +7,31 @@
     ArrowUp,
     StickyNote,
     Eye,
+    Play,
   } from "@lucide/svelte";
   import * as Resizable from "#lib/components/ui/resizable/index.js";
   import { Button } from "../ui/button/index.js";
   import { Label } from "../ui/label/index.js";
   import { Switch } from "../ui/switch/index.js";
   import Input from "../ui/input/input.svelte";
-  import { Textarea } from "../ui/textarea/index.js";
   import {
     InstallState,
+    StorageState,
+    type ModKeyBind,
     type ModKeyBindPreset,
+    type ModKeybindUpdate,
     type ModSaved,
     type Pack,
   } from "#lib/bindings/changeme/models.js";
   import { Checkbox } from "../ui/checkbox/index.js";
   import { formatSize } from "./utils.js";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.js";
-  import Keybinds from "./Keybinds.svelte";
+  import {
+    createMutation,
+    createQuery,
+    useQueryClient,
+  } from "@tanstack/svelte-query";
+  import { ModService } from "#lib/bindings/changeme/index.js";
 
   let {
     mod,
@@ -34,11 +42,9 @@
     onopenfolder,
     onopenlink,
     onTogglePack,
-    keybindData,
   }: {
     mod: ModSaved;
     onTogglePack: (pack: Pack) => void;
-    keybindData?: ModKeyBindPreset[];
     folders?: string[];
     imageSize?: number;
     onclose?: () => void;
@@ -55,15 +61,163 @@
   $effect(() => {
     localStorage.setItem("desc-hide-" + mod.id, hideDescription ? "1" : "0");
   });
+
   const hasNote = $derived(mod.submission.description.trim().length > 0);
   const anyInstalled = $derived(
     mod.packages?.some((p) => p.state === InstallState.InstallReady),
   );
-  const enabled = $derived(mod.packages?.some((p) => p.enabled));
+
+  const isActive = (p: Pack) => p.storage === StorageState.StorageActive;
+  const enabled = $derived(mod.packages?.some(isActive));
   const savedCtx = getSavedModsContext();
 
   function handleToggleMod() {
     savedCtx.toggleAllPkgs(mod.id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Keybinds
+  // ---------------------------------------------------------------------------
+  const queryKey = $derived(["current_keybinds", mod.id]);
+
+  const currentQuery = createQuery(() => ({
+    queryKey,
+    queryFn: () => ModService.GetCurrentBinds(mod.id),
+  }));
+
+  const binds = $derived<ModKeyBind[]>(currentQuery.data?.values ?? []);
+
+  const queryClient = useQueryClient();
+
+  const editKeyMutation = createMutation(() => ({
+    mutationFn: (update: ModKeybindUpdate) => ModService.UpdateKey(update),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  }));
+
+  // ---- key capture ----
+  let capturing = $state<{ packId: string; section: string } | undefined>();
+  let heldKeys = $state<string[]>([]);
+
+  const MOD_ORDER = ["ctrl", "alt", "shift"];
+  const sortCombo = (keys: string[]) =>
+    [...keys].sort((a, b) => {
+      const ai = MOD_ORDER.indexOf(a);
+      const bi = MOD_ORDER.indexOf(b);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+
+  const SPECIAL_KEYS: Record<string, string> = {
+    ArrowLeft: "VK_LEFT",
+    ArrowRight: "VK_RIGHT",
+    ArrowUp: "VK_UP",
+    ArrowDown: "VK_DOWN",
+    " ": "VK_SPACE",
+    Enter: "VK_RETURN",
+    Tab: "VK_TAB",
+    Backspace: "VK_BACK",
+    Delete: "VK_DELETE",
+    Insert: "VK_INSERT",
+    Home: "VK_HOME",
+    End: "VK_END",
+    PageUp: "VK_PRIOR",
+    PageDown: "VK_NEXT",
+  };
+
+  function toIniKey(e: KeyboardEvent): string | undefined {
+    switch (e.key) {
+      case "Control":
+        return "ctrl";
+      case "Alt":
+        return "alt";
+      case "Shift":
+        return "shift";
+      case "Meta":
+        return undefined;
+    }
+    if (SPECIAL_KEYS[e.key]) return SPECIAL_KEYS[e.key];
+    if (/^F\d{1,2}$/.test(e.key)) return e.key;
+    if (e.code.startsWith("Key")) return e.code.slice(3).toLowerCase();
+    if (e.code.startsWith("Digit")) return e.code.slice(5);
+    if (e.code.startsWith("Numpad")) return "VK_NUMPAD" + e.code.slice(6);
+    return e.key.length === 1 ? e.key.toLowerCase() : undefined;
+  }
+
+  function formatKey(raw: string | undefined) {
+    if (!raw) return "—";
+    return raw
+      .split(/\s+/)
+      .map((k) => k.replace(/^VK_/i, ""))
+      .map((k) =>
+        MOD_ORDER.includes(k.toLowerCase())
+          ? k[0].toUpperCase() + k.slice(1).toLowerCase()
+          : k.toUpperCase(),
+      )
+      .join(" + ");
+  }
+
+  const sectionLabel = (section: string) => section.replace(/^Key/i, "");
+
+  function commitKey(
+    target: { packId: string; section: string },
+    combo: string[],
+  ) {
+    capturing = undefined;
+    heldKeys = [];
+    editKeyMutation.mutate({
+      modId: mod.id,
+      packId: target.packId,
+      section: target.section,
+      key: "key", // ini key name
+      value: combo.join(" "),
+    });
+  }
+
+  function cancelCapture() {
+    capturing = undefined;
+    heldKeys = [];
+  }
+
+  // wait for a key (or a held combo, committed on the first release)
+  $effect(() => {
+    const target = capturing;
+    if (!target) return;
+    let combo: string[] = [];
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      if (e.key === "Escape") return cancelCapture();
+      const name = toIniKey(e);
+      if (name && !combo.includes(name)) {
+        combo = sortCombo([...combo, name]);
+        heldKeys = combo;
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (combo.length) commitKey(target, combo);
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-key-capture]")) {
+        cancelCapture();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  });
+
+  // no backend method exists for "press it in the game" yet
+  function handlePressInGame(bind: ModKeyBind) {
+    // e.g. ModService.PressKey(mod.id, bind.key)
   }
 </script>
 
@@ -174,10 +328,13 @@
               onCheckedChange={handleToggleMod}
             />
           </div>
+
           {#if (mod.packages?.length ?? 0) > 1}
             {#each mod.packages as pack (pack.id)}
               <label
-                class="flex items-start gap-3 px-4 py-3 transition-colors {pack.enabled
+                class="flex items-start gap-3 px-4 py-3 transition-colors {isActive(
+                  pack,
+                )
                   ? 'bg-muted/60'
                   : 'hover:bg-muted/30'} {pack.state !==
                 InstallState.InstallReady
@@ -186,7 +343,7 @@
               >
                 <Checkbox
                   class="mt-1"
-                  checked={pack.enabled}
+                  checked={isActive(pack)}
                   onCheckedChange={() => onTogglePack(pack)}
                 />
 
@@ -194,7 +351,7 @@
                   <div class="break-all font-semibold">
                     {pack.manifest.relPath}
                   </div>
-                  <div class="flex gap-3 text-sm text-muted-foreground">
+                  <div class="text-muted-foreground flex gap-3 text-sm">
                     <span class="font-medium"
                       >{formatSize(pack.manifest.size)}</span
                     >
@@ -203,6 +360,7 @@
               </label>
             {/each}
           {/if}
+
           <!-- Info -->
           <section class="space-y-3">
             <h3 class="text-muted-foreground text-xs">
@@ -260,19 +418,91 @@
             {/if}
           </section>
         </div>
-        {#if keybindData}
-          <Keybinds
-            data={[
-              {
-                mod,
-                name: "",
-                presets: keybindData,
-              },
-            ]}
-            toolId={mod.toolId}
-            title=""
-          />
-        {/if}
+
+        <!-- In-game keys -->
+        <section class="px-5 pb-6">
+          <div class="flex flex-wrap items-baseline gap-x-2">
+            <h3
+              class="text-muted-foreground text-xs font-medium tracking-widest uppercase"
+            >
+              In-game keys
+            </h3>
+            <span class="text-muted-foreground/70 text-xs">
+              click a key to change it, the arrow to press it in the game
+            </span>
+          </div>
+
+          {#if currentQuery.data}
+            <p class="text-primary mt-1 font-semibold">
+              {currentQuery.data.name || "Key sheet"}
+            </p>
+
+            <ul class="divide-border mt-2 divide-y divide-dashed">
+              {#each binds as bind (bind.packId + ":" + bind.section)}
+                {@const isCapturing =
+                  capturing?.packId === bind.packId &&
+                  capturing?.section === bind.section}
+                <li class="flex items-center justify-between gap-3 py-3">
+                  <div class="min-w-0 truncate">
+                    <span class="font-semibold"
+                      >{sectionLabel(bind.section)}</span
+                    >
+                    <span class="text-muted-foreground">{bind.actionType}</span>
+                  </div>
+
+                  <div class="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      data-key-capture
+                      class="min-w-14 rounded-lg border px-3 py-1.5 font-mono text-sm font-bold transition-colors
+                        {isCapturing
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-muted/60 hover:bg-muted'}"
+                      onclick={() => {
+                        if (isCapturing) return cancelCapture();
+                        heldKeys = [];
+                        capturing = {
+                          packId: bind.packId,
+                          section: bind.section,
+                        };
+                      }}
+                    >
+                      {#if isCapturing}
+                        {heldKeys.length
+                          ? formatKey(heldKeys.join(" "))
+                          : "Press a key…"}
+                      {:else}
+                        {formatKey(
+                          editKeyMutation.isPending &&
+                            editKeyMutation.variables.packId === bind.packId &&
+                            editKeyMutation.variables.section === bind.section
+                            ? editKeyMutation.variables.value
+                            : bind.key,
+                        )}
+                      {/if}
+                    </button>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="text-muted-foreground size-8"
+                      aria-label="Press {sectionLabel(
+                        bind.section,
+                      )} in the game"
+                      onclick={() => handlePressInGame(bind)}
+                    >
+                      <Play class="size-4 fill-current" />
+                    </Button>
+                  </div>
+                </li>
+              {:else}
+                <li class="text-muted-foreground py-3 text-sm">
+                  No keybinds in this mod.
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </section>
       </div>
     </Resizable.Pane>
   </Resizable.PaneGroup>

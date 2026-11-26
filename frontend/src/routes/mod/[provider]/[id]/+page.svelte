@@ -17,7 +17,7 @@
 
   import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
   import Gallery from "#lib/components/dini/Gallery.svelte";
-  import { formatSize } from "#lib/components/dini/utils.ts";
+  import { buildPackageViews, formatSize } from "#lib/components/dini/utils.ts";
   import { Avatar, AvatarImage } from "#lib/components/ui/avatar/index.ts";
   import AvatarFallback from "#lib/components/ui/avatar/avatar-fallback.svelte";
   import { Badge } from "#lib/components/ui/badge/index.ts";
@@ -47,8 +47,6 @@
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Wrench from "@lucide/svelte/icons/wrench";
-  import SubmissionFilePreview from "#lib/components/dini/SubmissionFilePreview.svelte";
-  import ModViewerModel from "#lib/components/viewer/ModViewer.svelte";
   import ModViewer from "#lib/components/viewer/ModViewer.svelte";
   import { createQuery } from "@tanstack/svelte-query";
 
@@ -70,32 +68,7 @@
     ),
   );
 
-  const packages = $derived.by<PackageView[]>(() => {
-    const localPacks = localMod?.packages;
-    return files.map((file) => {
-      const installed = localPacks?.find((pack) => pack.fileId === file.fileId);
-
-      return {
-        file,
-        pack: installed ?? {
-          id: file.fileId.toString(),
-          modId: `${submission.provider}:${submission.slug}`,
-          fileId: file.fileId,
-          name: file.fileName,
-          state: InstallState.$zero,
-          enabled: false,
-          storage: StorageState.$zero,
-          archiveFormat: "",
-          archiveSize: -1,
-          disabledAt: -1,
-          extractedSize: -1,
-          manifest: { relPath: "", size: file.size, hash: file.md5Checksum },
-        },
-        status: statusOf(file, installed),
-        enabled: installed !== undefined, // "selected" for the dialog; real state is pack.enabled
-      };
-    });
-  });
+  const packages = $derived(buildPackageViews(submission, files, localMod));
 
   const installedPacks = $derived(
     localMod?.packages?.filter((p) => p.storage !== StorageState.StorageNone) ??

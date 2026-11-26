@@ -26,6 +26,7 @@ export type {
     ManifestEntry,
     ModKeyBind,
     ModKeyBindPreset,
+    ModKeybindUpdate,
     ModSaved,
     Option,
     Pack,

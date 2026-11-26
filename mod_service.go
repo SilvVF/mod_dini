@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -227,6 +228,19 @@ func (ms *ModService) getBaseModelMods(mod ModSaved) []mod3d.BaseModelMod {
 	return baseModelMods
 }
 
+func (ms *ModService) OpenWindow(path string) {
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	application.Get().Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:  "Dini",
+		URL:    path, // served by the same asset handler as the main window
+		Width:  1280,
+		Height: 800,
+	})
+}
+
 func (ms *ModService) OpenKeybindsWindow() {
 
 	if ms.keybindsWindow != nil {
@@ -242,6 +256,18 @@ func (ms *ModService) OpenKeybindsWindow() {
 		URL:           "/keybinds",
 		Windows:       application.WindowsWindow{},
 	})
+}
+
+func (ms *ModService) UpdateKey(update ModKeybindUpdate) error {
+	return ms.ks.UpdateKey(update)
+}
+
+func (ms *ModService) GetCurrentBinds(modId string) (ModKeyBindPreset, error) {
+	return ms.ks.GetCurrent(modId)
+}
+
+func (ms *ModService) GetKeybind(modId string) (map[string]ModKeyBindPreset, error) {
+	return ms.ks.GetForMod(modId)
 }
 
 func (ms *ModService) GetKeyBinds() (map[string]map[string]ModKeyBindPreset, error) {

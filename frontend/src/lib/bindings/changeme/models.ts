@@ -149,6 +149,7 @@ export interface ManifestEntry {
 }
 
 export interface ModKeyBind {
+    "packId": string;
     "section": string;
     "key": string;
     "actionType": string;
@@ -165,6 +166,14 @@ export interface ModKeyBindPreset {
     "values": ModKeyBind[] | null;
     "createdAt": string;
     "updatedAt": string;
+}
+
+export interface ModKeybindUpdate {
+    "modId": string;
+    "packId": string;
+    "section": string;
+    "key": string;
+    "value": string;
 }
 
 export interface ModSaved {

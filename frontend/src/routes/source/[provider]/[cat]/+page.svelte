@@ -2,11 +2,12 @@
   import { page } from "$app/state";
   import {
     createInfiniteQuery,
+    createQuery,
     infiniteQueryOptions,
   } from "@tanstack/svelte-query";
   import { createVirtualizer } from "@tanstack/svelte-virtual";
 
-  import { ModService } from "#lib/bindings/changeme/index.ts";
+  import { ModService, type Submission } from "#lib/bindings/changeme/index.ts";
   import SubmissionPreview from "#lib/components/dini/SubmissionPreview.svelte";
   import { Button } from "#lib/components/ui/button/index.ts";
   import * as Select from "#lib/components/ui/select/index.ts";
@@ -15,6 +16,13 @@
   import { cn } from "#lib/utils.ts";
   import { Search, RefreshCw, SlidersHorizontal } from "@lucide/svelte";
   import { untrack } from "svelte";
+  import {
+    buildPackageViews,
+    submissionPageQuery,
+  } from "#lib/components/dini/utils.ts";
+  import type { PackageView } from "#lib/contexts/group-mods.ts";
+  import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
+  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
 
   const ROW_HEIGHT = 380;
   const GAP_X = 16;
@@ -44,6 +52,50 @@
     ),
   );
 
+  const saved = getSavedModsContext();
+
+  let installTarget = $state<Submission | undefined>();
+  let dialogOpen = $state(false);
+
+  const filesQuery = createQuery(() =>
+    submissionPageQuery(installTarget?.provider, installTarget?.submissionId ?? undefined),
+  );
+
+  const installLocalMod = $derived(
+    installTarget
+      ? saved.mods[`${installTarget.provider}:${installTarget.submissionId}`]
+      : undefined,
+  );
+
+  const installPackages = $derived(
+    installTarget && filesQuery.data
+      ? buildPackageViews(
+          installTarget,
+          filesQuery.data.submissionFiles ?? [],
+          installLocalMod,
+        )
+      : [],
+  );
+
+  function handleInstall(submission: Submission) {
+    installTarget = submission;
+    dialogOpen = true; // the dialog renders once the files have loaded
+  }
+
+  function handleConfirmDownload(packs: PackageView[]) {
+    if (!installTarget || !filesQuery.data) return;
+    saved.add(
+      installTarget,
+      filesQuery.data.submissionFiles ?? [],
+      packs.map((p) => p.pack),
+    );
+    dialogOpen = false;
+  }
+
+  function handleCancelDownload() {
+    dialogOpen = false;
+  }
+
   const query = createInfiniteQuery(() =>
     infiniteQueryOptions({
       queryKey: ["source", provider, category, sortBy, search, subcategory],
@@ -68,9 +120,6 @@
   );
 
   const rowCount = $derived(Math.ceil(filteredSubmissions.length / columns));
-
-  // TODO
-  const heros: string[] = [];
 
   // Virtualize *rows*; each row renders `columns` cards. Row height is fixed,
   // so no per-item measuring is needed.
@@ -164,6 +213,13 @@
         <h1 class="text-xl font-semibold tracking-tight">Browse submissions</h1>
         <p class="text-sm text-muted-foreground">
           {filteredSubmissions.length.toLocaleString()} submissions
+          {#if installTarget && filesQuery.isFetching}
+            · Loading files…
+          {:else if installTarget && filesQuery.isError}
+            · <button class="underline" onclick={() => filesQuery.refetch()}>
+              Couldn't load files, retry
+            </button>
+          {/if}
         </p>
       </div>
 
@@ -279,7 +335,11 @@
             style:grid-template-columns="repeat({columns}, minmax(0, 1fr))"
           >
             {#each rowItems(row.index) as submission (submission.submissionId)}
-              <SubmissionPreview class="max-h-340px" {submission} />
+              <SubmissionPreview
+                class="max-h-340px"
+                {submission}
+                onDownload={handleInstall}
+              />
             {/each}
           </div>
         {/each}
@@ -311,3 +371,12 @@
     </div>
   </div>
 </div>
+
+{#if filesQuery.data}
+  <FileSelectDialog
+    bind:open={dialogOpen}
+    packageView={installPackages}
+    onConfirm={handleConfirmDownload}
+    onCancel={handleCancelDownload}
+  />
+{/if}

@@ -37,8 +37,16 @@ export function FolderConfig(): $CancellablePromise<{ [_ in $models.ToolID]?: $m
     return $Call.ByID(697513691);
 }
 
+export function GetCurrentBinds(modId: string): $CancellablePromise<$models.ModKeyBindPreset> {
+    return $Call.ByID(1601803496, modId);
+}
+
 export function GetKeyBinds(): $CancellablePromise<{ [_ in string]?: { [_ in string]?: $models.ModKeyBindPreset } | null } | null> {
     return $Call.ByID(167642374);
+}
+
+export function GetKeybind(modId: string): $CancellablePromise<{ [_ in string]?: $models.ModKeyBindPreset } | null> {
+    return $Call.ByID(1402885809, modId);
 }
 
 export function GetPresets(): $CancellablePromise<$models.Preset[] | null> {
@@ -59,6 +67,10 @@ export function OnSettingAction(key: string, action: string): $CancellablePromis
 
 export function OpenKeybindsWindow(): $CancellablePromise<void> {
     return $Call.ByID(1088636220);
+}
+
+export function OpenWindow(path: string): $CancellablePromise<void> {
+    return $Call.ByID(1478225773, path);
 }
 
 export function Page(providerId: string, pageId: string): $CancellablePromise<$models.SubmissionPage> {
@@ -97,8 +109,8 @@ export function Subcategories(provider: string, category: string): $CancellableP
     return $Call.ByID(3903836073, provider, category);
 }
 
-export function ToolDir(tool: string): $CancellablePromise<string> {
-    return $Call.ByID(1991256346, tool);
+export function UpdateKey(update: $models.ModKeybindUpdate): $CancellablePromise<void> {
+    return $Call.ByID(1932371063, update);
 }
 
 export function UpdatePreset(presetId: number, name: string, items: $models.PresetItem[] | null): $CancellablePromise<void> {

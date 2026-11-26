@@ -3,8 +3,12 @@
   import GameConfigView from "./GameConfigView.svelte";
   import ModConfigView from "./ModConfigView.svelte";
   import LaunchBar from "./LaunchBar.svelte";
-  import { createQuery } from "@tanstack/svelte-query";
-  import { ModService } from "#lib/bindings/changeme/index.js";
+  import {
+    createMutation,
+    createQuery,
+    useQueryClient,
+  } from "@tanstack/svelte-query";
+  import { ModService, type ModKeybindUpdate } from "#lib/bindings/changeme/index.js";
 
   let {
     config,
@@ -20,20 +24,6 @@
   }: SidebarProps = $props();
 
   const activeCount = $derived(config.launchVanilla ? 0 : config.stats.loaded);
-  const query = createQuery(() => ({
-    queryKey: ["keybinds"],
-    queryFn: ModService.GetKeyBinds,
-  }));
-
-  const keybindData = $derived.by(() => {
-    if (!query.data || !selectedMod) return undefined;
-
-    const binds = Object.values(query.data[selectedMod.id] ?? {}).filter(
-      (preset) => preset !== undefined,
-    );
-
-    return binds
-  });
 </script>
 
 <aside
@@ -55,7 +45,6 @@
         {#key selectedMod.id}
           <ModConfigView
             mod={selectedMod}
-            {keybindData}
             onTogglePack={(pack) => onTogglePack(selectedMod, pack)}
             onclose={onclosemod}
             onopenfolder={() => onopenfolder?.(selectedMod.id)}

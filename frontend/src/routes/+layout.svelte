@@ -4,7 +4,15 @@
   import type { LayoutProps } from "./$types";
   import { setSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import Button from "#lib/components/ui/button/button.svelte";
-  import { Box, Globe, Globe2, Keyboard, LoaderCircle, Settings } from "@lucide/svelte";
+  import {
+    Box,
+    Globe,
+    Globe2,
+    Home,
+    Keyboard,
+    LoaderCircle,
+    Settings,
+  } from "@lucide/svelte";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { SvelteQueryDevtools } from "@tanstack/svelte-query-devtools";
   import {
@@ -24,12 +32,18 @@
     setActiveTool,
     tools,
   } from "#lib/state/app.svelte.ts";
-  import { getProcessContext, setProcessContext } from "#lib/contexts/process.svelte.ts";
+  import {
+    getProcessContext,
+    setProcessContext,
+  } from "#lib/contexts/process.svelte.ts";
+  import { queryClient } from "#lib/components/dini/utils.ts";
+  import NavBar from "#lib/components/dini/NavBar.svelte";
   let { children, data }: LayoutProps = $props();
 
-  const queryClient = new QueryClient();
-
-  setSavedModsContext(() => data.mods, () => data.presets);
+  setSavedModsContext(
+    () => data.mods,
+    () => data.presets,
+  );
   setSettingsContext(() => data.settings);
   setProcessContext();
 
@@ -75,6 +89,7 @@
         topBarHidden ? "hidden" : "",
       )}
     >
+      <NavBar class="mr-4 w-96 shrink" />
       <a
         href="/settings/general"
         onclick={(e) => openSettings(e, Category.CategoryMods)}
@@ -83,12 +98,6 @@
           <Settings class="size-4" />
         </Button>
       </a>
-      <Button variant="ghost" size="icon" href="/source/gamebanana/30305">
-        <Globe class="size-4" />
-      </Button>
-      <Button variant="ghost" size="icon" href="/source/huihui/zzz">
-        <Globe2 class="size-4" />
-      </Button>
       <Button variant="ghost" size="icon" onclick={openKeybindsWindow}>
         <Keyboard class="size-4" />
       </Button>
