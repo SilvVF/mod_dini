@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -24,6 +26,62 @@ type ProcessEvent struct {
 
 type ProcessWatcher struct {
 	Interval time.Duration
+}
+
+var xxmiScanDirs = [4]string{
+	os.Getenv("APPDATA"),
+	os.Getenv("LOCALAPPDATA"),
+	os.Getenv("ProgramFiles"),
+	os.Getenv("ProgramFiles(x86)"),
+}
+
+func getXXMILocation() (string, bool) {
+	for _, dir := range xxmiScanDirs {
+		if dir == "" {
+			continue
+		}
+
+		exePath, err := searchExecutable(dir, "XXMI Launcher.exe")
+		if err != nil {
+			continue
+		}
+
+		dir := filepath.Dir(exePath)
+		for range 2 {
+			dir = filepath.Dir(dir)
+		}
+
+		return dir, true
+	}
+
+	return "", false
+}
+
+func searchExecutable(root, name string) (string, error) {
+	var found string
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if !d.IsDir() && strings.EqualFold(d.Name(), name) {
+			found = path
+			return fs.SkipAll
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	if found == "" {
+		return "", os.ErrNotExist
+	}
+
+	return found, nil
 }
 
 func NewProcessWatcher(interval time.Duration) *ProcessWatcher {

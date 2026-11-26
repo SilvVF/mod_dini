@@ -27,6 +27,7 @@ func init() {
 	application.RegisterEvent[DataProgress]("mod-download-progress")
 	application.RegisterEvent[Setting]("setting-updated")
 	application.RegisterEvent[ProcessEvent]("process-event")
+	application.RegisterEvent[ModGroup]("group-update")
 }
 
 func main() {

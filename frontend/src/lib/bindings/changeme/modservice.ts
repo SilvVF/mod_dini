@@ -77,6 +77,10 @@ export function Settings(): $CancellablePromise<$models.Setting[] | null> {
     return $Call.ByID(1348616436);
 }
 
+export function StartGame(tool: $models.ToolID): $CancellablePromise<void> {
+    return $Call.ByID(511140937, tool);
+}
+
 export function Subcategories(provider: string, category: string): $CancellablePromise<$models.ProviderSubcategoryList> {
     return $Call.ByID(3903836073, provider, category);
 }

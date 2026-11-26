@@ -25,6 +25,7 @@
   import type { GameConfig } from "#lib/components/dini/types.ts";
   import { formatSize } from "#lib/components/dini/utils.ts";
   import { appState, toolBanner, toolName } from "#lib/state/app.svelte.ts";
+  import { ModService } from "#lib/bindings/changeme/index.ts";
 
   let { data }: PageProps = $props();
 
@@ -299,6 +300,10 @@
   }
 
   function handleVanillaChange(v: boolean) {}
+
+  function handleStart() {
+    ModService.StartGame(toolId)
+  }
 
   function handleWindowKeydown(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
@@ -611,6 +616,7 @@
         onselectmod={handleSelectMod}
         onclosemod={handleCloseMod}
         onvanillachange={handleVanillaChange}
+        onstart={handleStart}
       />
     </Resizable.Pane>
   </Resizable.PaneGroup>

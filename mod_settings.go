@@ -29,6 +29,16 @@ func (ms *ModService) SetActiveTool(toolId ToolID) error {
 	return err
 }
 
+func (ms *ModService) rescanXXMI() error {
+	path, _ := getXXMILocation()
+	if path != "" {
+		_, err := SetSettingValue(ms.settings, "xxmi.folder", path)
+		return err
+	}
+
+	return nil
+}
+
 func (ms *ModService) setModFolder(toolId ToolID, reset bool) error {
 	settingsKey := fmt.Sprintf("%s.folder", toolId)
 	if reset {

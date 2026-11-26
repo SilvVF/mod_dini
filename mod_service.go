@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -171,6 +172,24 @@ func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 	}, err
 }
 
+func (ms *ModService) StartGame(tool ToolID) error {
+	exeSubPath := "Resources\\Bin\\XXMI Launcher.exe"
+	dir, err := GetSetting[string](ms.settings, "xxmi.folder")
+	if err != nil {
+		return err
+	}
+
+	exeFilePath := filepath.Join(dir, exeSubPath)
+	cmd := exec.Command(
+		exeFilePath,
+		"--nogui",
+		"--xxmi",
+		tool,
+	)
+
+	return cmd.Run()
+}
+
 func (ms *ModService) getBaseModelMods(mod ModSaved) []mod3d.BaseModelMod {
 	baseModelMods := []mod3d.BaseModelMod{}
 	mods, err := ms.Initial()
@@ -252,17 +271,6 @@ func (ms *ModService) Initial() (map[string]ModSaved, error) {
 	})
 
 	return res, err
-}
-
-func (ms *ModService) rescanXXMI() error {
-	// todo(get path for xxmi)
-	path := ""
-	if path != "" {
-		_, err := SetSettingValue(ms.settings, "xxmi.folder", path)
-		return err
-	}
-
-	return nil
 }
 
 func (ms *ModService) toolRoot(toolID ToolID) (string, error) {
