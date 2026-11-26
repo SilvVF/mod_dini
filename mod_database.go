@@ -16,19 +16,58 @@ var (
 	ErrDownloadBucketNotCreated = errors.New("download bucket has not been created yet")
 )
 
-type ModGroup struct {
-	ID   uint64
-	Name string
-	Mods []ModGroupItem
+func (ms *ModService) EnablePreset(id uint64) error {
+	var preset Preset
+
+	err := ms.db.View(func(tx *bolt.Tx) error {
+
+		bkt := tx.Bucket(GROUP_BUCKET)
+		if bkt == nil {
+			return errors.New("group does not exist")
+		}
+
+		key := []byte(strconv.FormatUint(id, 10))
+		value := bkt.Get(key)
+		if value == nil {
+			return errors.New("group does not exist")
+		}
+
+		return json.Unmarshal(value, &preset)
+	})
+	if err != nil {
+		return err
+	}
+
+	mods, err := ms.Initial()
+	if err != nil {
+		return err
+	}
+
+	errs := []error{}
+	modIds := map[string]struct{}{}
+	for _, item := range preset.Mods {
+		errs = append(errs, ms.EnablePacks(item.ModId, item.PackIds))
+
+		log.Println("Enabling for preset", preset.ID, item)
+		modIds[item.ModId] = struct{}{}
+	}
+
+	for _, mod := range mods {
+		if mod.ToolId != preset.ToolID {
+			continue
+		}
+
+		if _, ok := modIds[mod.ID]; !ok {
+			log.Println("Disabling for preset", preset.ID, mod.ID)
+			ms.EnablePacks(mod.ID, []string{})
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
-type ModGroupItem struct {
-	Id    string
-	Packs []string
-}
-
-func (ms *ModService) GetGroups() []ModGroup {
-	ret := []ModGroup{}
+func (ms *ModService) GetPresets() []Preset {
+	ret := []Preset{}
 
 	ms.db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket(GROUP_BUCKET)
@@ -37,7 +76,7 @@ func (ms *ModService) GetGroups() []ModGroup {
 		}
 
 		return bkt.ForEach(func(k, v []byte) error {
-			var group ModGroup
+			var group Preset
 			err := json.Unmarshal(v, &group)
 			if err != nil {
 				return nil
@@ -51,8 +90,32 @@ func (ms *ModService) GetGroups() []ModGroup {
 	return ret
 }
 
-func (ms *ModService) updateGroup(id uint64, update func(group *ModGroup) error) (ModGroup, error) {
-	var group ModGroup
+func (ms *ModService) UpdatePreset(presetId uint64, name string, items []PresetItem) error {
+	_, err := ms.updatePreset(presetId, func(preset *Preset) error {
+		preset.Name = name
+		preset.Mods = items
+		return nil
+	})
+
+	return err
+}
+
+func (ms *ModService) CreatePreset(toolId ToolID, name string, items []PresetItem) error {
+	preset, err := ms.createGroup(toolId, name)
+	if err != nil {
+		return err
+	}
+
+	_, err = ms.updatePreset(preset.ID, func(preset *Preset) error {
+		preset.Mods = items
+		return nil
+	})
+
+	return err
+}
+
+func (ms *ModService) updatePreset(id uint64, update func(preset *Preset) error) (Preset, error) {
+	var group Preset
 	var err error
 
 	err = ms.db.Update(func(tx *bolt.Tx) error {
@@ -95,10 +158,11 @@ func (ms *ModService) updateGroup(id uint64, update func(group *ModGroup) error)
 	return group, nil
 }
 
-func (ms *ModService) createGroup(name string) (ModGroup, error) {
-	group := ModGroup{
-		Name: name,
-		Mods: make([]ModGroupItem, 0),
+func (ms *ModService) createGroup(toolId ToolID, name string) (Preset, error) {
+	group := Preset{
+		Name:   name,
+		ToolID: toolId,
+		Mods:   make([]PresetItem, 0),
 	}
 
 	err := ms.db.Update(func(tx *bolt.Tx) error {

@@ -13,6 +13,10 @@ import * as json$0 from "../encoding/json/models.js";
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function CreatePreset(toolId: $models.ToolID, name: string, items: $models.PresetItem[] | null): $CancellablePromise<void> {
+    return $Call.ByID(218668122, toolId, name, items);
+}
+
 export function DefaultSettings(): $CancellablePromise<$models.Setting[] | null> {
     return $Call.ByID(205736959);
 }
@@ -25,12 +29,20 @@ export function EnablePacks(modID: string, ids: string[] | null): $CancellablePr
     return $Call.ByID(1887951704, modID, ids);
 }
 
+export function EnablePreset(id: number): $CancellablePromise<void> {
+    return $Call.ByID(719461865, id);
+}
+
 export function FolderConfig(): $CancellablePromise<{ [_ in $models.ToolID]?: $models.RootFolder } | null> {
     return $Call.ByID(697513691);
 }
 
 export function GetKeyBinds(): $CancellablePromise<{ [_ in string]?: { [_ in string]?: $models.ModKeyBindPreset } | null } | null> {
     return $Call.ByID(167642374);
+}
+
+export function GetPresets(): $CancellablePromise<$models.Preset[] | null> {
+    return $Call.ByID(3400498157);
 }
 
 export function Initial(): $CancellablePromise<{ [_ in string]?: $models.ModSaved } | null> {
@@ -87,6 +99,10 @@ export function Subcategories(provider: string, category: string): $CancellableP
 
 export function ToolDir(tool: string): $CancellablePromise<string> {
     return $Call.ByID(1991256346, tool);
+}
+
+export function UpdatePreset(presetId: number, name: string, items: $models.PresetItem[] | null): $CancellablePromise<void> {
+    return $Call.ByID(3247260503, presetId, name, items);
 }
 
 export function UpdateSetting(key: string, value: json$0.RawMessage): $CancellablePromise<void> {

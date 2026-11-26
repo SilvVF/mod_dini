@@ -240,6 +240,18 @@ export interface PackPreview {
     "pack": Pack;
 }
 
+export interface Preset {
+    "id": number;
+    "toolId": ToolID;
+    "name": string;
+    "mods": PresetItem[] | null;
+}
+
+export interface PresetItem {
+    "modId": string;
+    "packIds": string[] | null;
+}
+
 export interface ProcessEvent {
     "type": EventType;
     "pid": number;

@@ -13,6 +13,7 @@
     onopenlink,
     onvanillachange,
     onTogglePack,
+    onSelectPreset,
     onstart,
   }: SidebarProps = $props();
 
@@ -25,7 +26,7 @@
   <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
     <!-- Game config is always rendered -->
     <div class="flex min-h-0 flex-1 flex-col" inert={!!selectedMod}>
-      <GameConfigView {config} {onselectmod} />
+      <GameConfigView {config} {onselectmod} onselectpreset={onSelectPreset} />
     </div>
     <div
       inert={!selectedMod}

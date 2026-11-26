@@ -30,6 +30,8 @@ export type {
     Option,
     Pack,
     PackPreview,
+    Preset,
+    PresetItem,
     ProcessEvent,
     ProviderSubcategoryList,
     RootFolder,

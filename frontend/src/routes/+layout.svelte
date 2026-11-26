@@ -29,7 +29,7 @@
 
   const queryClient = new QueryClient();
 
-  setSavedModsContext(() => data.mods);
+  setSavedModsContext(() => data.mods, () => data.presets);
   setSettingsContext(() => data.settings);
   setProcessContext();
 

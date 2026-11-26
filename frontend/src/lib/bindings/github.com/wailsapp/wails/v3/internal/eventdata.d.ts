@@ -12,6 +12,8 @@ import type * as main$0 from "../../../../../changeme/models.js";
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "group-removed": number;
+            "group-update": main$0.Preset;
             "mod-download-progress": main$0.DataProgress;
             "mod-removed": string;
             "mod-update": main$0.ModSaved;

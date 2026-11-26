@@ -48,6 +48,18 @@ type ModSaved struct {
 	Packs           []Pack           `json:"packages"`
 }
 
+type Preset struct {
+	ID     uint64       `json:"id"`
+	ToolID ToolID       `json:"toolId"`
+	Name   string       `json:"name"`
+	Mods   []PresetItem `json:"mods"`
+}
+
+type PresetItem struct {
+	ModId   string   `json:"modId"`
+	PackIds []string `json:"packIds"`
+}
+
 type DataProgress struct {
 	ID        string `json:"id"`
 	PackageID string `json:"packageId"`

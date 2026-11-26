@@ -12,9 +12,12 @@ export const load: LayoutLoad = async ({ params }) => {
 
   const mods = await ModService.Initial();
 
+  const presets = await ModService.GetPresets();
+
   return {
     rootFolder: compact(rootFolder ?? {}),
     settings: settings ?? [],
     mods: compact(mods ?? {}),
+    presets: presets ?? [],
   };
 };

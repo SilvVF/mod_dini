@@ -34,7 +34,8 @@
   type ModFilter = "all" | "enabled" | "disabled";
   type SidebarTab = "all" | "with-mods";
 
-  const isEnabled = (m: ModSaved) => m.packages?.some((p) => p.enabled) ?? false;
+  const isEnabled = (m: ModSaved) =>
+    m.packages?.some((p) => p.enabled) ?? false;
 
   const gridClass = `grid w-full grid-cols-1 items-stretch gap-4
     sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5`;
@@ -239,26 +240,38 @@
     return total;
   });
 
-  let config = $derived<GameConfig>({
-    game: {
-      id: appState.activeTool,
-      name: toolName(appState.activeTool),
-      image: toolBanner(appState.activeTool),
-    },
-    preset: {
-      id: "p1",
-      name: "Preset 1",
-      modIds: [],
-    },
-    mods: groupedMods.flatMap((group) => group.items),
-    stats: {
-      loaded: enabled,
-      total: mods.length,
-      sizeOnDisk: formatSize(totalSize),
-      overlaps: 0,
-      updates: 0,
-    },
-    launchVanilla: false,
+  let viewingPreset: number | undefined = $state(undefined);
+  let config = $derived.by<GameConfig>(() => {
+    const presets = Object.values(saved.presets).filter(
+      (preset) => preset.toolId === toolId,
+    );
+    const viewedPreset = presets.find((p) => p.id === viewingPreset);
+    const presetMods = new Set<string>();
+
+    viewedPreset?.mods?.forEach((m) => presetMods.add(m.modId));
+    const viewedMods = mods.filter((m) => presetMods.has(m.id));
+    const enabledMods = mods.filter((m) =>
+      m.packages?.some((p) => p.storage === StorageState.StorageActive),
+    );
+
+    return {
+      game: {
+        id: appState.activeTool,
+        name: toolName(appState.activeTool),
+        image: toolBanner(appState.activeTool),
+      },
+      presets: presets,
+      viewedPreset: viewedPreset,
+      mods: viewedPreset ? viewedMods : enabledMods,
+      stats: {
+        loaded: enabled,
+        total: mods.length,
+        sizeOnDisk: formatSize(totalSize),
+        overlaps: 0,
+        updates: 0,
+      },
+      launchVanilla: false,
+    };
   });
 
   const modFilterTabs = $derived<{ id: ModFilter; label: string }[]>([
@@ -302,7 +315,7 @@
   function handleVanillaChange(v: boolean) {}
 
   function handleStart() {
-    ModService.StartGame(toolId)
+    ModService.StartGame(toolId);
   }
 
   function handleWindowKeydown(e: KeyboardEvent) {
@@ -617,6 +630,9 @@
         onclosemod={handleCloseMod}
         onvanillachange={handleVanillaChange}
         onstart={handleStart}
+        onSelectPreset={(id) => {
+          viewingPreset = id;
+        }}
       />
     </Resizable.Pane>
   </Resizable.PaneGroup>
