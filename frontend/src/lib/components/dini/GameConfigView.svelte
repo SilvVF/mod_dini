@@ -40,7 +40,7 @@
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
-    saved.createPreset(name, config.game.id);
+    saved.createPresetFromActivePacks(name, config.game.id);
     newName = "";
     createOpen = false;
   }

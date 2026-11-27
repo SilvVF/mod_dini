@@ -1,54 +1,56 @@
-<script lang="ts">
-  import { Card } from "#lib/components/ui/card/index.ts";
-  import { Button } from "#lib/components/ui/button/index.ts";
-  import { Switch } from "#lib/components/ui/switch/index.ts";
-  import {
-    Box,
-    Settings,
-    TrashIcon,
-    LoaderCircleIcon,
-    TriangleAlertIcon,
-    RotateCcwIcon,
-    ArchiveRestoreIcon,
-    ArrowUpRightIcon,
-    SnowflakeIcon,
-  } from "@lucide/svelte/icons";
-
-  import {
-    InstallState,
-    StorageState,
-    type CharacterFolder,
-    type ModSaved,
-    type RootFolder,
-    type Subfolder,
+<script lang="ts" module>
+  import type {
+    CharacterFolder,
+    ModSaved,
+    RootFolder,
+    Subfolder,
   } from "#lib/bindings/changeme/index.ts";
-  import Skeleton from "../ui/skeleton/skeleton.svelte";
 
   export interface GroupedCharacter {
     name: string;
     folder: CharacterFolder | Subfolder | RootFolder;
     local: ModSaved;
   }
+</script>
+
+<script lang="ts">
+  import {
+    ArchiveRestore,
+    ArrowUpRight,
+    Box,
+    Ellipsis,
+    LoaderCircle,
+    RotateCcw,
+    Snowflake,
+    Trash2,
+    TriangleAlert,
+  } from "@lucide/svelte";
+  import { goto } from "$app/navigation";
+  import {
+    InstallState,
+    StorageState,
+    type Pack,
+  } from "#lib/bindings/changeme/index.ts";
+  import { openPreview } from "#lib/state/app.svelte.ts";
+  import { cn } from "#lib/utils.ts";
+  import { Badge } from "#lib/components/ui/badge/index.ts";
+  import { Button } from "#lib/components/ui/button/index.ts";
+  import { Card } from "#lib/components/ui/card/index.ts";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.ts";
+  import Skeleton from "#lib/components/ui/skeleton/skeleton.svelte";
+  import { Switch } from "#lib/components/ui/switch/index.ts";
 
   interface Props {
     item: GroupedCharacter;
     onClick: () => void;
-    onSettings?: (item: GroupedCharacter) => void;
     onDelete?: (item: GroupedCharacter) => void;
     onToggle?: (item: GroupedCharacter, enabled: boolean) => void;
     onRetry?: (item: GroupedCharacter) => void;
     conflict?: boolean;
   }
 
-  let {
-    item,
-    onClick,
-    onSettings,
-    onDelete,
-    onToggle,
-    onRetry,
-    conflict,
-  }: Props = $props();
+  let { item, onClick, onDelete, onToggle, onRetry, conflict }: Props =
+    $props();
 
   const INSTALLING = [
     InstallState.InstallQueued,
@@ -59,263 +61,264 @@
     StorageState.StorageRestoring,
     StorageState.StorageCompressing,
   ];
-  const ERROR = [InstallState.InstallErr];
 
-  type Status = "error" | "installing" | "restoring" | "ready";
+  const isActive = (p: Pack) => p.storage === StorageState.StorageActive;
+  const isBusy = (p: Pack) => RESTORING.includes(p.storage);
+  const canPreview = (p: Pack) =>
+    p.state === InstallState.InstallReady &&
+    p.storage !== StorageState.StorageNone &&
+    !isBusy(p);
 
   const submission = $derived(item.local.submission);
   const packs = $derived(item.local.packages ?? []);
 
-  const enabled = $derived(packs.some((p) => p.enabled));
+  const packLabel = (p: Pack) => p.name || `Pack ${packs.indexOf(p) + 1}`;
 
-  // Nothing on disk to enable (no extracted files and no archive)
+  const activeCount = $derived(packs.filter(isActive).length);
+  const enabled = $derived(activeCount > 0);
   const noStorage = $derived(
     packs.length > 0 &&
       packs.every((p) => p.storage === StorageState.StorageNone),
   );
-
-  // At least one pack is compressed into an archive
   const cold = $derived(
     packs.some((p) => p.storage === StorageState.StorageCold),
   );
+  const previewable = $derived(packs.filter(canPreview));
 
-  const status: Status = $derived.by(() => {
-    if (packs.some((p) => ERROR.includes(p.state))) {
-      return "error";
-    } else if (packs.some((p) => INSTALLING.includes(p.state))) {
-      return "installing";
-    } else if (packs.some((p) => RESTORING.includes(p.storage))) {
-      return "restoring";
-    } else {
+  const status = $derived.by<"error" | "installing" | "restoring" | "ready">(
+    () => {
+      if (packs.some((p) => p.state === InstallState.InstallErr))
+        return "error";
+      if (packs.some((p) => INSTALLING.includes(p.state))) return "installing";
+      if (packs.some(isBusy)) return "restoring";
       return "ready";
-    }
-  });
-
+    },
+  );
+  const ready = $derived(status === "ready");
   const busy = $derived(status === "installing" || status === "restoring");
+  const dimmed = $derived(ready && !enabled);
 
-  // Fully disabled: finished installing, but no pack is enabled
-  const dimmed = $derived(status === "ready" && (!enabled || noStorage));
-
-  const installLabel = $derived.by(() => {
-    const states = packs.map((p) => p.state);
-    if (states.includes(InstallState.InstallDownloading)) return "Downloading…";
-    if (states.includes(InstallState.InstallExtracting)) return "Extracting…";
+  const busyLabel = $derived.by(() => {
+    const hasState = (s: InstallState) => packs.some((p) => p.state === s);
+    if (status === "restoring") {
+      return packs.some((p) => p.storage === StorageState.StorageCompressing)
+        ? "Compressing…"
+        : "Restoring from archive…";
+    }
+    if (hasState(InstallState.InstallDownloading)) return "Downloading…";
+    if (hasState(InstallState.InstallExtracting)) return "Extracting…";
     return "Queued";
   });
 
-  const statusLabel = $derived(
-    status === "restoring" ? "Restoring from archive…" : installLabel,
+  const conflictHint = $derived(
+    activeCount > 1
+      ? "More than one pack of this mod is on"
+      : "Another mod for this character is also on",
   );
 
   const detailsHref = $derived(
     `/mod/${submission?.provider}/${submission?.submissionId}`,
   );
 
-  // Keeps card-level onClick from firing when pressing inner controls.
-  const stop = (fn?: () => void) => (e: MouseEvent) => {
-    e.stopPropagation();
-    fn?.();
-  };
+  let menuOpen = $state(false);
+
+  function previewPack(e: Event, pack: Pack) {
+    openPreview(e, item.local.id, pack.id);
+    menuOpen = false;
+  }
+
+  const stop = (e: Event) => e.stopPropagation();
+
+  const menuItem = "gap-2.5 py-2";
+  const menuIcon = "text-muted-foreground size-4";
 </script>
 
 <Card
-  class="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-card p-0 {status ===
-  'error'
-    ? 'border-destructive/60'
-    : 'border-border/70'}"
+  class={cn(
+    "group hover:border-primary/40 cursor-pointer gap-0 overflow-hidden rounded-xl p-0 transition-colors",
+    status === "error" && "border-destructive/60 hover:border-destructive",
+    "h-full w-full",
+  )}
   onclick={onClick}
 >
-  <div class="relative aspect-4/3 overflow-hidden">
-    {#if conflict && enabled && status === "ready"}
-      <span
-        class="absolute z-10 left-2 top-2 rounded-md bg-amber-300 px-2 py-0.5 text-xs font-semibold text-amber-950 shadow-sm"
-        title={packs.filter((p) => p.enabled).length > 1
-          ? "More than one pack of this mod is on"
-          : "Another mod for this character is also on"}
-      >
-        Conflict
-      </span>
-    {/if}
+  <div class="bg-muted relative shrink-0 overflow-hidden h-7/12">
     {#if submission?.thumbnailUrl}
       <img
         src={submission.thumbnailUrl}
         alt={submission.name}
-        class="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02] {busy
-          ? 'opacity-60'
-          : ''} {status === 'error' ? 'opacity-40 grayscale' : ''} {dimmed
-          ? 'brightness-50'
-          : ''}"
         loading="lazy"
+        class={cn(
+          "size-full object-cover transition duration-300 group-hover:scale-[1.02]",
+          busy && "opacity-60",
+          status === "error" && "opacity-40 grayscale",
+          dimmed && "grayscale",
+        )}
       />
     {:else}
-      <Skeleton class="h-full w-full" />
+      <Skeleton class="size-full rounded-none" />
+    {/if}
+
+    {#if busy || status === "error"}
+      <div
+        class={cn(
+          "absolute inset-0 flex flex-col items-center justify-center gap-2",
+          busy ? "bg-background/50 backdrop-blur-[1px]" : "bg-destructive/10",
+        )}
+      >
+        {#if status === "error"}
+          <TriangleAlert class="text-destructive size-7" />
+          <span class="text-destructive text-sm font-medium">
+            Install failed
+          </span>
+        {:else}
+          {#if status === "restoring"}
+            <ArchiveRestore class="text-primary size-6" />
+          {:else}
+            <LoaderCircle class="text-primary size-6 animate-spin" />
+          {/if}
+          <span class="text-sm font-medium">{busyLabel}</span>
+        {/if}
+      </div>
     {/if}
 
     {#if busy}
       <div
-        class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/50 backdrop-blur-[1px]"
+        class="bg-primary/70 absolute inset-x-0 bottom-0 h-1 animate-pulse"
+      ></div>
+    {/if}
+
+    {#if conflict && enabled && ready}
+      <Badge
+        class="absolute top-2 left-2 z-10 border-transparent bg-amber-300 text-amber-950"
+        title={conflictHint}
       >
-        {#if status === "restoring"}
-          <ArchiveRestoreIcon class="size-6 text-primary" />
-        {:else}
-          <LoaderCircleIcon class="size-6 animate-spin text-primary" />
-        {/if}
-        <span class="text-sm font-medium">{statusLabel}</span>
-      </div>
-    {:else if status === "error"}
-      <div
-        class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-destructive/10"
-      >
-        <TriangleAlertIcon class="size-7 text-destructive" />
-        <span class="text-sm font-medium text-destructive">
-          Install failed
-        </span>
-      </div>
-    {:else if cold}
-      <div
-        class="absolute right-2 top-2 rounded-full bg-background/80 p-1.5 text-sky-500 shadow-sm backdrop-blur-sm"
+        Conflict
+      </Badge>
+    {/if}
+
+    {#if cold && ready}
+      <Badge
+        variant="secondary"
+        class="absolute top-2 right-2 gap-1 text-sky-500"
         title="Archived (cold storage)"
       >
-        <SnowflakeIcon class="size-4" aria-label="Archived" />
-      </div>
+        <Snowflake class="size-3" />
+        Archived
+      </Badge>
+    {/if}
+
+    {#if packs.length > 1}
+      <Badge variant="secondary" class="absolute bottom-3 left-2">
+        {packs.length} packs
+      </Badge>
     {/if}
   </div>
 
-  <div class="flex flex-1 flex-col gap-2 px-4 pb-3">
+  <div class="flex flex-1 flex-col gap-4 p-4 pb-3">
     <div class="min-w-0">
-      <h3 class="line-clamp-2 text-base font-semibold leading-5 tracking-tight">
+      <h3 class="line-clamp-2 text-lg leading-6 font-semibold tracking-tight">
         {submission?.name ?? item.name}
       </h3>
-
-      <p class="mt-1.5 truncate text-sm text-muted-foreground">
+      <p class="text-muted-foreground mt-1 truncate text-sm line-clamp-1">
         By {submission?.author ?? "Unknown"}
       </p>
     </div>
 
-    {#if busy}
-      <div class="mt-auto flex flex-col gap-2 py-2">
-        <div class="h-1 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            class="h-full w-full animate-pulse rounded-full bg-primary/70"
-          ></div>
-        </div>
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-muted-foreground">{statusLabel}</span>
+    <div class="mt-auto flex items-center justify-between gap-2">
+      <div class="flex items-center" role="presentation" onclick={stop}>
+        {#if !busy}
           <Button
             variant="ghost"
             size="icon"
-            class="size-8"
-            href={detailsHref}
-            aria-label="View mod details"
-            onclick={stop()}
-          >
-            <ArrowUpRightIcon class="size-4" />
-          </Button>
-        </div>
-      </div>
-    {:else if status === "error"}
-      <div class="mt-auto flex flex-col gap-2 py-2">
-        <p class="text-xs text-destructive">
-          Something went wrong while installing this mod.
-        </p>
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              class="h-8 gap-1.5"
-              onclick={stop(() => onRetry?.(item))}
-            >
-              <RotateCcwIcon class="size-3.5" />
-              Retry
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="size-8"
-              onclick={stop(() => onDelete?.(item))}
-              aria-label="Delete mod"
-            >
-              <TrashIcon class="size-4" />
-            </Button>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-8"
-            href={detailsHref}
-            aria-label="View mod details"
-            onclick={stop()}
-          >
-            <ArrowUpRightIcon class="size-4" />
-          </Button>
-        </div>
-      </div>
-    {:else}
-      <div class="mt-auto flex flex-col gap-1 py-2">
-        <div class="flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-8"
-            onclick={stop(() => onSettings?.(item))}
-            aria-label="Mod settings"
-          >
-            <Settings class="size-4" />
-          </Button>
-
-          <span class="px-0.5 text-sm font-medium">{packs.length}</span>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-8"
-            onclick={stop(() => onDelete?.(item))}
+            class="text-muted-foreground hover:text-destructive size-8"
+            onclick={() => onDelete?.(item)}
             aria-label="Delete mod"
+            title="Delete mod"
           >
-            <TrashIcon class="size-4" />
+            <Trash2 class="size-4" />
           </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-8"
-            href={`/model/${item.local.id}/${packs.at(0)?.id}`}
-            aria-label="Preview model"
-            onclick={stop()}
-          >
-            <Box class="size-4" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-8"
-            href={detailsHref}
-            aria-label="View mod details"
-            onclick={stop()}
-          >
-            <ArrowUpRightIcon class="size-4" />
-          </Button>
-        </div>
-
-        <div
-          class="flex justify-end"
-          title={noStorage ? "Mod files are not available" : undefined}
-          onclick={(e) => e.stopPropagation()}
-          role="presentation"
-        >
-          <Switch
-            checked={enabled && !noStorage}
-            disabled={noStorage}
-            onCheckedChange={(checked) => {
-              if (noStorage) return;
-              onToggle?.(item, checked);
-            }}
-            aria-label="Enable mod"
-          />
-        </div>
+        {/if}
       </div>
-    {/if}
+
+      <div class="flex items-center gap-2" role="presentation" onclick={stop}>
+        {#if ready}
+          <span title={noStorage ? "Mod files are not available" : undefined}>
+            <Switch
+              checked={enabled}
+              disabled={noStorage}
+              onCheckedChange={(checked) => onToggle?.(item, checked)}
+              aria-label="Enable mod"
+            />
+          </span>
+        {/if}
+
+        <DropdownMenu.Root bind:open={menuOpen}>
+          <DropdownMenu.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                variant="ghost"
+                size="icon"
+                class="size-8"
+                aria-label="More actions"
+                title="More actions"
+              >
+                <Ellipsis class="size-4" />
+              </Button>
+            {/snippet}
+          </DropdownMenu.Trigger>
+
+          <DropdownMenu.Content align="end" class="w-56 rounded-xl p-1.5">
+            {#if status === "error"}
+              <DropdownMenu.Item
+                class={menuItem}
+                onSelect={() => onRetry?.(item)}
+              >
+                <RotateCcw class={menuIcon} />
+                Retry install
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator />
+            {/if}
+
+            {#if ready && previewable.length === 1}
+              <DropdownMenu.Item
+                class={menuItem}
+                onSelect={(e) => previewPack(e, previewable[0])}
+              >
+                <Box class={menuIcon} />
+                Preview in 3D
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator />
+            {:else if ready && previewable.length > 1}
+              <DropdownMenu.Sub>
+                <DropdownMenu.SubTrigger class={menuItem}>
+                  <Box class={menuIcon} />
+                  Preview in 3D
+                </DropdownMenu.SubTrigger>
+                <DropdownMenu.SubContent class="rounded-xl p-1.5">
+                  {#each previewable as pack (pack.id)}
+                    <DropdownMenu.Item
+                      class={menuItem}
+                      onSelect={(e) => previewPack(e, pack)}
+                    >
+                      {packLabel(pack)}
+                    </DropdownMenu.Item>
+                  {/each}
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Sub>
+              <DropdownMenu.Separator />
+            {/if}
+
+            <DropdownMenu.Item
+              class={menuItem}
+              onSelect={() => goto(detailsHref)}
+            >
+              <ArrowUpRight class={menuIcon} />
+              View details
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
+      </div>
+    </div>
   </div>
 </Card>

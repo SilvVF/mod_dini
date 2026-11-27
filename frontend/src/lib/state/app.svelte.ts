@@ -1,5 +1,6 @@
 import { Events } from "@wailsio/runtime";
 import { ModService } from "../bindings/changeme";
+import { goto } from "$app/navigation";
 
 export const appState = $state({
   activeTool: "zzmi",
@@ -107,4 +108,15 @@ export function toolBanner(toolId: string): string {
       return "https://images.gamebanana.com/img/Webpage/Game/Profile/Background/68c8f553e9533.png";
   }
   return "";
+}
+
+export const previewHref = (modId: string, packId: string) =>
+  `/model/${modId}/${packId}`;
+
+export function openPreview(e: Event, modId: string, packId: string) {
+  e.preventDefault();
+  goto(previewHref(modId, packId), {
+    shallow: true,
+    state: { preview: { modId, packId } },
+  });
 }

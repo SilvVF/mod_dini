@@ -1,19 +1,18 @@
 <script lang="ts">
   import { formatDistanceToNow } from "date-fns";
   import type { PageProps } from "./$types";
-  import { page } from "$app/state";
 
   import {
     InstallState,
-    ModService,
     StorageState,
     type ModSaved,
     type Pack,
   } from "#lib/bindings/changeme/index.ts";
-  import { statusOf, type PackageView } from "#lib/contexts/group-mods.ts";
+  import type { PackageView } from "#lib/contexts/group-mods.ts";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
-  import { toolName, tools } from "#lib/state/app.svelte.ts";
+  import { openPreview, toolName, tools } from "#lib/state/app.svelte.ts";
   import { compact } from "#lib/ts-ext.ts";
+  import { cn } from "#lib/utils.ts";
 
   import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
   import Gallery from "#lib/components/dini/Gallery.svelte";
@@ -31,24 +30,24 @@
   import TabsList from "#lib/components/ui/tabs/tabs-list.svelte";
   import TabsTrigger from "#lib/components/ui/tabs/tabs-trigger.svelte";
 
-  import ArrowLeft from "@lucide/svelte/icons/arrow-left";
-  import Box from "@lucide/svelte/icons/box";
-  import CalendarClock from "@lucide/svelte/icons/calendar-clock";
-  import CalendarPlus from "@lucide/svelte/icons/calendar-plus";
-  import ChevronRight from "@lucide/svelte/icons/chevron-right";
-  import Download from "@lucide/svelte/icons/download";
-  import Files from "@lucide/svelte/icons/files";
-  import Hash from "@lucide/svelte/icons/hash";
-  import Heart from "@lucide/svelte/icons/heart";
-  import History from "@lucide/svelte/icons/history";
-  import Info from "@lucide/svelte/icons/info";
-  import MessageCircle from "@lucide/svelte/icons/message-circle";
-  import Package from "@lucide/svelte/icons/package";
-  import RotateCw from "@lucide/svelte/icons/rotate-cw";
-  import Trash2 from "@lucide/svelte/icons/trash-2";
-  import Wrench from "@lucide/svelte/icons/wrench";
-  import ModViewer from "#lib/components/viewer/ModViewer.svelte";
-  import { createQuery } from "@tanstack/svelte-query";
+  import {
+    ArrowLeft,
+    Box,
+    CalendarClock,
+    CalendarPlus,
+    ChevronRight,
+    Download,
+    Files,
+    Hash,
+    Heart,
+    History,
+    Info,
+    MessageCircle,
+    Package,
+    RotateCw,
+    Trash2,
+    Wrench,
+  } from "@lucide/svelte";
 
   let { data }: PageProps = $props();
   const saved = getSavedModsContext();
@@ -60,41 +59,27 @@
     saved.mods[`${submission.provider}:${submission.submissionId}`],
   );
   let toolId = $derived(localMod?.toolId ?? data.resolvedToolId ?? undefined);
-  const needsTool = $derived(!localMod && !toolId);
+  const toolLocked = $derived(!!localMod || !!data.resolvedToolId);
+  const needsTool = $derived(!toolId);
 
   const characters = $derived(
     compact(
       toolId ? (data.rootFolder[toolId]?.characters.characters ?? {}) : {},
     ),
   );
-
   const packages = $derived(buildPackageViews(submission, files, localMod));
+
+  const isActive = (p: Pack) => p.storage === StorageState.StorageActive;
+  const isBusy = (p: Pack) =>
+    p.storage === StorageState.StorageCompressing ||
+    p.storage === StorageState.StorageRestoring;
 
   const installedPacks = $derived(
     localMod?.packages?.filter((p) => p.storage !== StorageState.StorageNone) ??
       [],
   );
   const isInstalled = $derived(installedPacks.length > 0);
-  const enabledCount = $derived(installedPacks.filter((p) => p.enabled).length);
-
-  const heroFromApi = $derived(submission.hero);
-
-  let selectedHero = $derived(heroFromApi);
-
-  const canSelectHero = $derived(heroFromApi == null && localMod == null);
-
-  const hero = $derived(selectedHero ?? heroFromApi ?? undefined);
-
-  let selectedPackPreviewId: string | undefined = $derived(undefined);
-
-  const previewQuery = createQuery(() => ({
-    queryKey: ["preview-model", localMod?.id, selectedPackPreviewId],
-    queryFn: async () => {
-      if (!localMod || !selectedPackPreviewId) return;
-      return await ModService.PreviewPack(localMod.id, selectedPackPreviewId);
-    },
-    enabled: localMod !== undefined && selectedPackPreviewId !== undefined,
-  }));
+  const enabledCount = $derived(installedPacks.filter(isActive).length);
 
   const IN_PROGRESS = [
     InstallState.InstallQueued,
@@ -104,9 +89,27 @@
   const installing = $derived(
     localMod?.packages?.some((p) => IN_PROGRESS.includes(p.state)) ?? false,
   );
-
   const dlProgress = $derived(
     localMod ? saved.dlProgress[localMod.id] : undefined,
+  );
+
+  const heroFromApi = $derived(submission.hero);
+  let selectedHero = $derived(heroFromApi);
+  const hero = $derived(selectedHero ?? undefined);
+  const canSelectHero = $derived(heroFromApi == null && localMod == null);
+
+  let heroQuery = $state("");
+  const filteredCharacters = $derived(
+    Object.entries(characters).filter(([name]) =>
+      name.toLowerCase().includes(heroQuery.trim().toLowerCase()),
+    ),
+  );
+
+  const downloads = $derived(files.reduce((n, f) => n + f.downloadCount, 0));
+  const authorUrl = $derived(
+    submission.provider === "gamebanana" && submission.authorRemoteId
+      ? `https://gamebanana.com/members/${submission.authorRemoteId}`
+      : "",
   );
 
   let dialogOpen = $state(false);
@@ -121,45 +124,20 @@
   ];
   const comingSoon = ["changelog", "comments"];
 
-  const isBusy = (p: Pack) =>
-    p.storage === StorageState.StorageCompressing ||
-    p.storage === StorageState.StorageRestoring;
-
   const progressPct = (p: Pack) =>
     dlProgress && dlProgress.packageId === p.id && dlProgress.total > 0
       ? (dlProgress.progress / dlProgress.total) * 100
       : 0;
 
-  // unix seconds or milliseconds
+  // timestamps arrive as unix seconds or milliseconds
   const toDate = (ts: number) => new Date(ts < 1e12 ? ts * 1000 : ts);
   const ago = (ts: number) =>
     ts ? formatDistanceToNow(toDate(ts), { addSuffix: true }) : "-";
-
   const initials = (s: string) => s.slice(0, 2).toUpperCase();
-
-  const downloads = $derived(files.reduce((n, f) => n + f.downloadCount, 0));
-
-  const authorUrl = $derived(
-    submission.provider === "gamebanana" && submission.authorRemoteId
-      ? `https://gamebanana.com/members/${submission.authorRemoteId}`
-      : "",
-  );
-
-  let heroQuery = $state("");
-
-  const filteredCharacters = $derived(
-    Object.entries(characters).filter(([name]) =>
-      name.toLowerCase().includes(heroQuery.trim().toLowerCase()),
-    ),
-  );
 
   function handleConfirmDownload(packs: PackageView[]) {
     if (!toolId) return;
-
-    if (canSelectHero && selectedHero !== null) {
-      submission.hero = selectedHero;
-    }
-
+    if (canSelectHero && selectedHero) submission.hero = selectedHero;
     saved.add(
       submission,
       files,
@@ -168,14 +146,13 @@
   }
 
   function reinstall() {
-    if (!localMod) return;
-    saved.add(submission, files, installedPacks);
+    if (localMod) saved.add(submission, files, installedPacks);
   }
 
   function setPackEnabled(pack: Pack, on: boolean) {
     if (!localMod) return;
     const ids = installedPacks
-      .filter((p) => p.enabled && p.id !== pack.id)
+      .filter((p) => isActive(p) && p.id !== pack.id)
       .map((p) => p.id);
     if (on) ids.push(pack.id);
     saved.setAsEnabledPkgs(localMod.id, ids);
@@ -194,8 +171,6 @@
     "flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground";
   const label = "text-xs uppercase tracking-wider text-muted-foreground";
 </script>
-
-<!-- ---- snippets ---------------------------------------------------------- -->
 
 {#snippet stat(Icon: typeof Download, name: string, value: string)}
   <div class={card}>
@@ -273,9 +248,7 @@
           </Select.Content>
         </Select.Root>
       {:else}
-        <div class="truncate font-semibold">
-          {hero ?? "Unknown"}
-        </div>
+        <div class="truncate font-semibold">{hero ?? "Unknown"}</div>
       {/if}
     </div>
   </div>
@@ -305,15 +278,13 @@
 {/snippet}
 
 {#snippet toolCard(span: string)}
-  <div class="{card} {span} {needsTool ? 'border-destructive/60' : ''}">
+  <div class={cn(card, span, needsTool && "border-destructive/60")}>
     <div class={tile}><Wrench class="size-4" /></div>
     <div class="min-w-0 flex-1">
       <div class={label}>Install to</div>
-      {#if localMod || data.resolvedToolId}
+      {#if toolLocked}
         <div class="truncate font-mono font-semibold">
-          {localMod
-            ? toolName(localMod.toolId)
-            : toolName(data.resolvedToolId ?? "")}
+          {toolName(toolId ?? "")}
         </div>
       {:else}
         <Select.Root
@@ -392,15 +363,13 @@
         <Badge variant="outline">Update available</Badge>
       {/if}
       <Switch
-        checked={pkg.pack.enabled}
+        checked={isActive(pkg.pack)}
         disabled={isBusy(pkg.pack)}
         onCheckedChange={(on) => setPackEnabled(pkg.pack, on)}
       />
     {/if}
   </div>
 {/snippet}
-
-<!-- ---- page -------------------------------------------------------------- -->
 
 <FileSelectDialog
   bind:open={dialogOpen}
@@ -423,7 +392,6 @@
   </Button>
 
   <section class="rounded-2xl border bg-card">
-    <!-- banner -->
     <div class="relative h-80 overflow-hidden rounded-t-2xl bg-muted">
       {#if submission.thumbnailUrl}
         <img
@@ -453,7 +421,7 @@
             {submission.category}
           </p>
         </div>
-
+        
         <Button
           variant="outline"
           class="shrink-0 gap-2 rounded-full bg-background/60 backdrop-blur"
@@ -466,7 +434,6 @@
     </div>
 
     <div class="flex flex-col gap-4 p-8">
-      <!-- hero / author / downloads / likes -->
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {@render heroCard()}
         {@render authorCard()}
@@ -476,7 +443,6 @@
 
       <hr />
 
-      <!-- dates / install target / installed files -->
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {@render stat(CalendarPlus, "Published", ago(submission.remoteAddedAt))}
         {@render stat(
@@ -495,7 +461,6 @@
       </div>
     </div>
 
-    <!-- footer actions -->
     <div
       class="flex flex-wrap items-center justify-between gap-3 border-t px-8 py-5"
     >
@@ -578,35 +543,30 @@
     </TabsContent>
 
     <TabsContent value="3d" class="mt-4">
-      <section class="rounded-2xl border bg-card p-8 text-muted-foreground">
-        Install to view in 3d.
-      </section>
-      <Select.Root
-        type="single"
-        value={localMod?.packages?.at(0)?.id ?? ""}
-        onValueChange={(v) => (selectedPackPreviewId = v)}
-      >
-        <Select.Trigger
-          class="h-7 w-full border-0 bg-transparent p-0 font-mono font-semibold shadow-none"
-        >
-          {selectedPackPreviewId ? selectedPackPreviewId : "Select a pack"}
-        </Select.Trigger>
-        <Select.Content>
-          {#each localMod.packages as p (p.id)}
-            <Select.Item value={p.id} label={p.name} />
+      {#if localMod && isInstalled}
+        <section class="divide-y overflow-hidden rounded-2xl border bg-card">
+          {#each installedPacks as pack, i (pack.id)}
+            <div class="flex items-center justify-between gap-4 px-6 py-4">
+              <span class="truncate font-semibold">
+                {pack.name || `Pack ${i + 1}`}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                class="gap-2"
+                disabled={isBusy(pack)}
+                onclick={(e) => openPreview(e, localMod.id, pack.id)}
+              >
+                <Box class="size-4" />
+                Preview
+              </Button>
+            </div>
           {/each}
-        </Select.Content>
-      </Select.Root>
-      {#if selectedPackPreviewId && previewQuery.data && previewQuery.data.payload}
-        <div class="h-800px">
-          <ModViewer
-            mod={previewQuery.data.mod}
-            pack={previewQuery.data.pack}
-            payload={previewQuery.data.payload}
-            embedded={true}
-            onClose={() => {}}
-          />
-        </div>
+        </section>
+      {:else}
+        <section class="rounded-2xl border bg-card p-8 text-muted-foreground">
+          Install to view in 3D.
+        </section>
       {/if}
     </TabsContent>
 

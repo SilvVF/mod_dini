@@ -1,79 +1,137 @@
 <script lang="ts">
   import {
     Box,
-    Pencil,
-    Star,
-    X,
-    ArrowUp,
-    StickyNote,
+    Check,
+    ChevronDown,
+    ExternalLink,
     Eye,
-    Play,
+    EyeOff,
+    FolderOpen,
+    Pencil,
+    X,
   } from "@lucide/svelte";
-  import * as Resizable from "#lib/components/ui/resizable/index.js";
-  import { Button } from "../ui/button/index.js";
-  import { Label } from "../ui/label/index.js";
-  import { Switch } from "../ui/switch/index.js";
-  import Input from "../ui/input/input.svelte";
-  import {
-    InstallState,
-    StorageState,
-    type ModKeyBind,
-    type ModKeyBindPreset,
-    type ModKeybindUpdate,
-    type ModSaved,
-    type Pack,
-  } from "#lib/bindings/changeme/models.js";
-  import { Checkbox } from "../ui/checkbox/index.js";
-  import { formatSize } from "./utils.js";
-  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.js";
   import {
     createMutation,
     createQuery,
     useQueryClient,
   } from "@tanstack/svelte-query";
-  import { ModService } from "#lib/bindings/changeme/index.js";
   import { Events } from "@wailsio/runtime";
+  import {
+    InstallState,
+    StorageState,
+    type ModKeyBind,
+    type ModKeybindUpdate,
+    type ModSaved,
+    type Pack,
+  } from "#lib/bindings/changeme/models.ts";
+  import { ModService } from "#lib/bindings/changeme/index.ts";
+  import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
+  import { cn } from "#lib/utils.ts";
+  import { Badge } from "#lib/components/ui/badge/index.ts";
+  import { Button } from "#lib/components/ui/button/index.ts";
+  import { Checkbox } from "#lib/components/ui/checkbox/index.ts";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.ts";
+  import Input from "#lib/components/ui/input/input.svelte";
+  import { Label } from "#lib/components/ui/label/index.ts";
+  import * as Resizable from "#lib/components/ui/resizable/index.ts";
+  import * as Select from "#lib/components/ui/select/index.ts";
+  import { Switch } from "#lib/components/ui/switch/index.ts";
+  import { formatSize } from "./utils.ts";
+  import { openPreview } from "#lib/state/app.svelte.ts";
 
   let {
     mod,
-    /** Height of the preview image as a percentage (0-100) of the panel. Bind it to keep the size across mods. */
+    folders = [],
     imageSize = $bindable(35),
     onclose,
     onunload,
     onopenfolder,
     onopenlink,
+    onrename,
+    onrecategorize,
     onTogglePack,
   }: {
     mod: ModSaved;
-    onTogglePack: (pack: Pack) => void;
+    /** Folders of the selected tool this mod can be moved to. */
     folders?: string[];
+    /** Height of the preview image as a percentage (0-100) of the panel. Bind it to keep the size across mods. */
     imageSize?: number;
     onclose?: () => void;
     onunload?: () => void;
     onopenfolder?: () => void;
     onopenlink?: () => void;
+    onrename?: (name: string) => void;
+    onrecategorize?: (folder: string) => void;
+    onTogglePack: (pack: Pack) => void;
   } = $props();
 
-  let noteOpen = $state(false);
-  let hideDescription = $derived(
-    localStorage.getItem("desc-hide-" + mod.id) === "1",
+  const savedCtx = getSavedModsContext();
+  const queryClient = useQueryClient();
+
+  const packs = $derived(mod.packages ?? []);
+
+  const isActive = (p: Pack) => p.storage === StorageState.StorageActive;
+  const isBusy = (p: Pack) =>
+    p.storage === StorageState.StorageCompressing ||
+    p.storage === StorageState.StorageRestoring;
+  const canPreview = (p: Pack) =>
+    p.state === InstallState.InstallReady &&
+    p.storage !== StorageState.StorageNone &&
+    !isBusy(p);
+  const packLabel = (p: Pack) => p.name || p.manifest.relPath;
+
+  const enabled = $derived(packs.some(isActive));
+  const activeCount = $derived(packs.filter(isActive).length);
+  const previewable = $derived(packs.filter(canPreview));
+
+  let previewMenuOpen = $state(false);
+
+  let renaming = $state(false);
+  let nameDraft = $state("");
+  let nameInput = $state<HTMLInputElement | null>(null);
+
+  function startRename() {
+    nameDraft = mod.submission.name;
+    renaming = true;
+  }
+
+  function commitRename() {
+    if (!renaming) return;
+    renaming = false;
+    const name = nameDraft.trim();
+    if (name && name !== mod.submission.name) onrename?.(name);
+  }
+
+  $effect(() => {
+    if (!renaming) return;
+    nameInput?.focus();
+    nameInput?.select();
+  });
+
+  let folderQuery = $state("");
+  const filteredFolders = $derived(
+    folders.filter((f) =>
+      f.toLowerCase().includes(folderQuery.trim().toLowerCase()),
+    ),
   );
 
   $effect(() => {
-    localStorage.setItem("desc-hide-" + mod.id, hideDescription ? "1" : "0");
+    void mod.id;
+    renaming = false;
+    folderQuery = "";
   });
 
-  const hasNote = $derived(mod.submission.description.trim().length > 0);
-  const anyInstalled = $derived(
-    mod.packages?.some((p) => p.state === InstallState.InstallReady),
+  const hasDescription = $derived(
+    mod.submission.description.trim().length > 0,
+  );
+  const descriptionKey = $derived(`desc-hide-${mod.id}`);
+  let hideDescription = $derived(
+    localStorage.getItem(descriptionKey) === "1",
   );
 
-  const isActive = (p: Pack) => p.storage === StorageState.StorageActive;
-  const enabled = $derived(mod.packages?.some(isActive));
-  const savedCtx = getSavedModsContext();
-
-  function handleToggleMod() {
-    savedCtx.toggleAllPkgs(mod.id);
+  function toggleDescription() {
+    hideDescription = !hideDescription;
+    localStorage.setItem(descriptionKey, hideDescription ? "1" : "0");
   }
 
   const queryKey = $derived(["current_keybinds", mod.id]);
@@ -85,21 +143,18 @@
 
   const binds = $derived<ModKeyBind[]>(currentQuery.data?.values ?? []);
 
-  const queryClient = useQueryClient();
-
   const editKeyMutation = createMutation(() => ({
     mutationFn: (update: ModKeybindUpdate) => ModService.UpdateKey(update),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   }));
 
   $effect(() => {
-    const unsubscribe = Events.On("ini-file-updated", ({data}) => {
-      if (!data) return
-      queryClient.invalidateQueries({ queryKey: ["current_keybinds", data] })
-    })
-
+    const unsubscribe = Events.On("ini-file-updated", ({ data }) => {
+      if (!data) return;
+      queryClient.invalidateQueries({ queryKey: ["current_keybinds", data] });
+    });
     return () => unsubscribe();
-  })
+  });
 
   let capturing = $state<{ packId: string; section: string } | undefined>();
   let heldKeys = $state<string[]>([]);
@@ -163,12 +218,37 @@
 
   const sectionLabel = (section: string) => section.replace(/^Key/i, "");
 
+  const isCapturing = (bind: ModKeyBind) =>
+    capturing?.packId === bind.packId && capturing?.section === bind.section;
+
+  function keyLabel(bind: ModKeyBind) {
+    if (isCapturing(bind)) {
+      return heldKeys.length ? formatKey(heldKeys.join(" ")) : "Press a key…";
+    }
+    const pending = editKeyMutation.isPending
+      ? editKeyMutation.variables
+      : undefined;
+    const isPending =
+      pending?.packId === bind.packId && pending?.section === bind.section;
+    return formatKey(isPending ? pending?.value : bind.key);
+  }
+
+  function toggleCapture(bind: ModKeyBind) {
+    if (isCapturing(bind)) return cancelCapture();
+    heldKeys = [];
+    capturing = { packId: bind.packId, section: bind.section };
+  }
+
+  function cancelCapture() {
+    capturing = undefined;
+    heldKeys = [];
+  }
+
   function commitKey(
     target: { packId: string; section: string },
     combo: string[],
   ) {
-    capturing = undefined;
-    heldKeys = [];
+    cancelCapture();
     editKeyMutation.mutate({
       modId: mod.id,
       packId: target.packId,
@@ -176,11 +256,6 @@
       key: "key", // ini key name
       value: combo.join(" "),
     });
-  }
-
-  function cancelCapture() {
-    capturing = undefined;
-    heldKeys = [];
   }
 
   // wait for a key (or a held combo, committed on the first release)
@@ -221,10 +296,8 @@
     };
   });
 
-  // no backend method exists for "press it in the game" yet
-  function handlePressInGame(bind: ModKeyBind) {
-    // e.g. ModService.PressKey(mod.id, bind.key)
-  }
+  const sectionTitle =
+    "text-muted-foreground text-xs font-medium tracking-widest uppercase";
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
@@ -242,34 +315,68 @@
             alt=""
             class="size-full object-cover"
           />
+        {:else}
+          <Box
+            class="text-muted-foreground/40 absolute inset-0 m-auto size-12"
+          />
         {/if}
 
-        {#if anyInstalled}
-          <span
-            class="bg-background/80 absolute bottom-2 left-3 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold backdrop-blur"
-          >
-            <Box class="size-3.5" /> 3D
-          </span>
-        {/if}
+        <div
+          class="from-background/80 pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t to-transparent"
+        ></div>
 
-        <div class="absolute top-3 right-3 flex gap-2">
-          <Button
-            variant="secondary"
-            size="icon"
-            class="size-9 rounded-full"
-            aria-label="Edit previews"
-          >
-            <Pencil class="size-4" />
-          </Button>
-          <Button
-            variant="secondary"
-            size="icon"
-            class="size-9 rounded-full"
-            aria-label="Close"
-            onclick={onclose}
-          >
-            <X class="size-4" />
-          </Button>
+        <Button
+          variant="secondary"
+          size="icon"
+          class="absolute top-3 right-3 size-9 rounded-full backdrop-blur"
+          aria-label="Close"
+          onclick={onclose}
+        >
+          <X class="size-4" />
+        </Button>
+
+        <div class="absolute bottom-3 left-3">
+          {#if previewable.length === 1}
+            <Button
+              variant="secondary"
+              size="sm"
+              class="gap-2 rounded-full backdrop-blur"
+              onclick={(e) => openPreview(e, mod.id, previewable[0].id)}
+            >
+              <Box class="size-4" />
+              3D preview
+            </Button>
+          {:else if previewable.length > 1}
+            <DropdownMenu.Root bind:open={previewMenuOpen}>
+              <DropdownMenu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    variant="secondary"
+                    size="sm"
+                    class="gap-2 rounded-full backdrop-blur"
+                  >
+                    <Box class="size-4" />
+                    3D preview
+                    <ChevronDown class="size-3.5" />
+                  </Button>
+                {/snippet}
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="start">
+                <DropdownMenu.Label>Preview pack</DropdownMenu.Label>
+                {#each previewable as pack (pack.id)}
+                  <DropdownMenu.Item
+                    onSelect={(e) => {
+                      openPreview(e, mod.id, pack.id);
+                      previewMenuOpen = false;
+                    }}
+                  >
+                    {packLabel(pack)}
+                  </DropdownMenu.Item>
+                {/each}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          {/if}
         </div>
       </div>
     </Resizable.Pane>
@@ -278,247 +385,280 @@
 
     <Resizable.Pane minSize={25}>
       <div class="h-full overflow-y-auto">
-        <div class="space-y-5 px-5 pt-4 pb-6">
-          <!-- Title -->
-          <div>
-            <p class="text-primary text-xs font-medium tracking-wide">
-              {mod.submission.category}
-            </p>
-            <div class="mt-1 flex items-start gap-3">
-              <h2
-                class="min-w-0 flex-1 text-2xl leading-tight font-bold wrap-break-word"
-              >
-                {mod.submission.name}
-              </h2>
-              <div class="flex shrink-0 gap-2">
+        <div class="space-y-6 px-5 py-5">
+          <header class="space-y-2">
+            {#if mod.submission.category}
+              <Badge variant="secondary">{mod.submission.category}</Badge>
+            {/if}
+
+            {#if renaming}
+              <div class="flex items-center gap-2">
+                <Input
+                  bind:ref={nameInput}
+                  bind:value={nameDraft}
+                  aria-label="Mod name"
+                  class="h-10 text-lg font-semibold"
+                  onblur={commitRename}
+                  onkeydown={(e) => {
+                    if (e.key === "Enter") commitRename();
+                    else if (e.key === "Escape") renaming = false;
+                  }}
+                />
                 <Button
                   variant="secondary"
                   size="icon"
-                  class="size-9"
+                  class="size-9 shrink-0"
+                  aria-label="Save name"
+                  onmousedown={(e) => e.preventDefault()}
+                  onclick={commitRename}
+                >
+                  <Check class="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="size-9 shrink-0"
+                  aria-label="Cancel rename"
+                  onmousedown={(e) => e.preventDefault()}
+                  onclick={() => (renaming = false)}
+                >
+                  <X class="size-4" />
+                </Button>
+              </div>
+            {:else}
+              <div class="flex items-start gap-2">
+                <h2
+                  class="min-w-0 flex-1 text-2xl leading-tight font-bold wrap-break-word"
+                >
+                  {mod.submission.name}
+                </h2>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="size-8 shrink-0"
                   aria-label="Rename"
+                  onclick={startRename}
                 >
                   <Pencil class="size-4" />
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  class="size-9"
-                  aria-label={false
-                    ? "Remove from favorites"
-                    : "Add to favorites"}
-                  aria-pressed={true}
-                >
-                  <Star class="size-4 {false ? 'fill-current' : ''}" />
-                </Button>
               </div>
+            {/if}
+
+            <div class="text-muted-foreground flex items-center gap-1 text-sm">
+              <span>by {mod.submission.author || "Unknown"}</span>
+              {#if onopenlink}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="size-6"
+                  aria-label="Open post"
+                  onclick={onopenlink}
+                >
+                  <ExternalLink class="size-3.5" />
+                </Button>
+              {/if}
             </div>
-            <p class="text-muted-foreground mt-2 text-sm">
-              by {mod.submission.author || "Unknown"}
-            </p>
-          </div>
+          </header>
 
           <div
-            class="bg-muted/60 flex items-center justify-between rounded-xl px-4 py-3.5"
+            class="bg-muted/40 flex items-center justify-between rounded-xl border px-4 py-3"
           >
-            <Label
-              for="mod-enabled"
-              class="text-primary text-base font-semibold"
-            >
-              {enabled ? "Enabled" : "Disabled"}
-            </Label>
+            <div>
+              <Label
+                for="mod-enabled"
+                class={cn("text-base font-semibold", enabled && "text-primary")}
+              >
+                {enabled ? "Enabled" : "Disabled"}
+              </Label>
+              {#if packs.length > 1}
+                <p class="text-muted-foreground text-xs">
+                  {activeCount} of {packs.length} packs active
+                </p>
+              {/if}
+            </div>
             <Switch
               id="mod-enabled"
               checked={enabled}
-              onCheckedChange={handleToggleMod}
+              onCheckedChange={() => savedCtx.toggleAllPkgs(mod.id)}
             />
           </div>
 
-          {#if (mod.packages?.length ?? 0) > 1}
-            {#each mod.packages as pack (pack.id)}
-              <label
-                class="flex items-start gap-3 px-4 py-3 transition-colors {isActive(
-                  pack,
-                )
-                  ? 'bg-muted/60'
-                  : 'hover:bg-muted/30'} {pack.state !==
-                InstallState.InstallReady
-                  ? 'cursor-not-allowed opacity-60'
-                  : 'cursor-pointer'}"
-              >
-                <Checkbox
-                  class="mt-1"
-                  checked={isActive(pack)}
-                  onCheckedChange={() => onTogglePack(pack)}
-                />
-
-                <div class="min-w-0 flex-1 space-y-0.5">
-                  <div class="break-all font-semibold">
-                    {pack.manifest.relPath}
-                  </div>
-                  <div class="text-muted-foreground flex gap-3 text-sm">
-                    <span class="font-medium"
-                      >{formatSize(pack.manifest.size)}</span
-                    >
-                  </div>
-                </div>
-              </label>
-            {/each}
+          {#if packs.length > 1}
+            <section class="space-y-2">
+              <h3 class={sectionTitle}>Packs</h3>
+              <div class="divide-y overflow-hidden rounded-xl border">
+                {#each packs as pack (pack.id)}
+                  {@const ready = pack.state === InstallState.InstallReady}
+                  <label
+                    class={cn(
+                      "flex items-center gap-3 px-4 py-3 transition-colors",
+                      isActive(pack) && "bg-muted/50",
+                      ready
+                        ? "hover:bg-muted/30 cursor-pointer"
+                        : "cursor-not-allowed opacity-60",
+                    )}
+                  >
+                    <Checkbox
+                      checked={isActive(pack)}
+                      disabled={!ready}
+                      onCheckedChange={() => onTogglePack(pack)}
+                    />
+                    <div class="min-w-0 flex-1">
+                      <div class="text-sm font-medium break-all">
+                        {packLabel(pack)}
+                      </div>
+                      <div class="text-muted-foreground text-xs">
+                        {formatSize(pack.manifest.size)}
+                      </div>
+                    </div>
+                    {#if pack.storage === StorageState.StorageCold}
+                      <Badge variant="outline">Compressed</Badge>
+                    {/if}
+                  </label>
+                {/each}
+              </div>
+            </section>
           {/if}
-          <section class="space-y-3">
-            <h3 class="text-muted-foreground text-xs">
-              Info <span class="ml-1 opacity-70">saved automatically</span>
-            </h3>
 
-            <div class="grid grid-cols-[4rem_1fr] items-center gap-x-3 gap-y-3">
-              <Label for="mod-author" class="text-muted-foreground"
-                >Author</Label
+          {#if folders.length > 0}
+            <section class="space-y-2">
+              <h3 class={sectionTitle}>Category</h3>
+              <Select.Root
+                type="single"
+                value={mod.characterId ?? ""}
+                onValueChange={(folder) => {
+                  if (folder && folder !== mod.characterId) {
+                    onrecategorize?.(folder);
+                  }
+                }}
+                onOpenChange={(open) => {
+                  if (!open) folderQuery = "";
+                }}
               >
-              <Input
-                id="mod-author"
-                value={mod.submission.author}
-                placeholder="Unknown"
-              />
+                <Select.Trigger class="w-full">
+                  {mod.characterId || "Uncategorized"}
+                </Select.Trigger>
+                <Select.Content>
+                  <div class="bg-popover sticky top-0 z-10 p-1">
+                    <Input
+                      bind:value={folderQuery}
+                      placeholder="Search folders..."
+                      class="h-8"
+                      onkeydown={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  {#each filteredFolders as folder (folder)}
+                    <Select.Item value={folder} label={folder} />
+                  {:else}
+                    <div
+                      class="text-muted-foreground px-2 py-4 text-center text-sm"
+                    >
+                      No folders found
+                    </div>
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+            </section>
+          {/if}
 
-              <Label for="mod-link" class="text-muted-foreground">Link</Label>
-              <div class="flex gap-2">
-                <Input
-                  id="mod-link"
-                  type="url"
-                  value={mod.submission.slug}
-                  placeholder="https://"
-                />
+          {#if hasDescription}
+            <section class="space-y-2">
+              <div class="flex items-center justify-between">
+                <h3 class={sectionTitle}>Description</h3>
                 <Button
-                  variant="secondary"
+                  variant="ghost"
                   size="icon"
-                  class="shrink-0"
-                  aria-label="Open link"
-                  disabled={!mod.submission.slug}
-                  onclick={onopenlink}
+                  class="size-7"
+                  aria-label={hideDescription
+                    ? "Show description"
+                    : "Hide description"}
+                  onclick={toggleDescription}
                 >
-                  <ArrowUp class="size-4" />
+                  {#if hideDescription}
+                    <EyeOff class="size-4" />
+                  {:else}
+                    <Eye class="size-4" />
+                  {/if}
                 </Button>
               </div>
+              {#if !hideDescription}
+                <div
+                  class="text-muted-foreground [&_a]:text-primary text-sm leading-relaxed [&_a]:underline [&_img]:max-w-full [&_img]:rounded-md"
+                >
+                  {@html mod.submission.description}
+                </div>
+              {/if}
+            </section>
+          {/if}
+
+          <section class="space-y-2">
+            <div class="flex items-baseline justify-between gap-2">
+              <h3 class={sectionTitle}>In-game keys</h3>
+              <span class="text-muted-foreground/70 text-xs">
+                click a key to change it
+              </span>
             </div>
 
-            <Button
-              onclick={() => {
-                hideDescription = !hideDescription;
-              }}
-            >
-              <Eye />
-            </Button>
-            {#if !hideDescription && (noteOpen || hasNote)}
-              {@html mod.submission.description}
-            {:else}
-              <button
-                type="button"
-                onclick={() => (noteOpen = true)}
-                class="text-muted-foreground hover:text-foreground flex items-center gap-2 text-sm"
-              >
-                <StickyNote class="size-4" /> Add a note
-              </button>
-            {/if}
-          </section>
-        </div>
+            {#if currentQuery.data}
+              <p class="text-primary text-sm font-semibold">
+                {currentQuery.data.name || "Key sheet"}
+              </p>
 
-        <section class="px-5 pb-6">
-          <div class="flex flex-wrap items-baseline gap-x-2">
-            <h3
-              class="text-muted-foreground text-xs font-medium tracking-widest uppercase"
-            >
-              In-game keys
-            </h3>
-            <span class="text-muted-foreground/70 text-xs">
-              click a key to change it, the arrow to press it in the game
-            </span>
-          </div>
+              <ul class="divide-y overflow-hidden rounded-xl border">
+                {#each binds as bind (bind.packId + ":" + bind.section)}
+                  {@const active = isCapturing(bind)}
+                  <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <div class="min-w-0 truncate text-sm">
+                      <span class="font-semibold">
+                        {sectionLabel(bind.section)}
+                      </span>
+                      <span class="text-muted-foreground">
+                        {bind.actionType}
+                      </span>
+                    </div>
 
-          {#if currentQuery.data}
-            <p class="text-primary mt-1 font-semibold">
-              {currentQuery.data.name || "Key sheet"}
-            </p>
-
-            <ul class="divide-border mt-2 divide-y divide-dashed">
-              {#each binds as bind (bind.packId + ":" + bind.section)}
-                {@const isCapturing =
-                  capturing?.packId === bind.packId &&
-                  capturing?.section === bind.section}
-                <li class="flex items-center justify-between gap-3 py-3">
-                  <div class="min-w-0 truncate">
-                    <span class="font-semibold"
-                      >{sectionLabel(bind.section)}</span
-                    >
-                    <span class="text-muted-foreground">{bind.actionType}</span>
-                  </div>
-
-                  <div class="flex shrink-0 items-center gap-2">
                     <button
                       type="button"
                       data-key-capture
-                      class="min-w-14 rounded-lg border px-3 py-1.5 font-mono text-sm font-bold transition-colors
-                        {isCapturing
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-muted/60 hover:bg-muted'}"
-                      onclick={() => {
-                        if (isCapturing) return cancelCapture();
-                        heldKeys = [];
-                        capturing = {
-                          packId: bind.packId,
-                          section: bind.section,
-                        };
-                      }}
+                      class={cn(
+                        "min-w-14 shrink-0 rounded-md border px-3 py-1 font-mono text-xs font-bold transition-colors",
+                        active
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted/60 hover:bg-muted",
+                      )}
+                      onclick={() => toggleCapture(bind)}
                     >
-                      {#if isCapturing}
-                        {heldKeys.length
-                          ? formatKey(heldKeys.join(" "))
-                          : "Press a key…"}
-                      {:else}
-                        {formatKey(
-                          editKeyMutation.isPending &&
-                            editKeyMutation.variables.packId === bind.packId &&
-                            editKeyMutation.variables.section === bind.section
-                            ? editKeyMutation.variables.value
-                            : bind.key,
-                        )}
-                      {/if}
+                      {keyLabel(bind)}
                     </button>
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="text-muted-foreground size-8"
-                      aria-label="Press {sectionLabel(
-                        bind.section,
-                      )} in the game"
-                      onclick={() => handlePressInGame(bind)}
-                    >
-                      <Play class="size-4 fill-current" />
-                    </Button>
-                  </div>
-                </li>
-              {:else}
-                <li class="text-muted-foreground py-3 text-sm">
-                  No keybinds in this mod.
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </section>
+                  </li>
+                {:else}
+                  <li class="text-muted-foreground px-4 py-3 text-sm">
+                    No keybinds in this mod.
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </section>
+        </div>
       </div>
     </Resizable.Pane>
   </Resizable.PaneGroup>
 
-  <!-- Sticky actions -->
   <footer class="bg-card flex gap-3 border-t px-5 py-3">
     <Button
       variant="secondary"
-      class="rounded-full px-5 font-semibold"
-      onclick={onopenfolder}>Open folder</Button
+      class="gap-2 rounded-full px-5 font-semibold"
+      onclick={onopenfolder}
     >
+      <FolderOpen class="size-4" />
+      Open folder
+    </Button>
     <Button
       variant="outline"
       class="flex-1 rounded-full font-semibold"
-      onclick={onunload}>Unload</Button
+      onclick={onunload}
     >
+      Unload
+    </Button>
   </footer>
 </div>

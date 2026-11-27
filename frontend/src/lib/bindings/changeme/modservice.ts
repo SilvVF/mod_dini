@@ -69,6 +69,10 @@ export function OpenKeybindsWindow(): $CancellablePromise<void> {
     return $Call.ByID(1088636220);
 }
 
+export function OpenModFolder(modId: string): $CancellablePromise<void> {
+    return $Call.ByID(2074540695, modId);
+}
+
 export function OpenWindow(path: string): $CancellablePromise<void> {
     return $Call.ByID(1478225773, path);
 }

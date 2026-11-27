@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -60,6 +62,42 @@ func NewModService(app *application.App, db *bolt.DB) *ModService {
 	}
 
 	return ms
+}
+
+func (ms *ModService) OpenModFolder(modId string) error {
+
+	mod, err := ms.getMod(modId)
+	if err != nil {
+		return err
+	}
+
+	toolDir, err := ms.toolRoot(mod.ToolId)
+	if err != nil {
+		return err
+	}
+
+	modDir := filepath.Join(toolDir, mod.Submission.Provider, mod.Submission.SubmissionID)
+	info, err := os.Stat(modDir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		modDir = filepath.Dir(modDir)
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", filepath.Clean(modDir))
+	case "darwin":
+		cmd = exec.Command("open", modDir)
+	default:
+		cmd = exec.Command("xdg-open", modDir)
+	}
+
+	log.Println(cmd.Args)
+
+	return cmd.Run()
 }
 
 func (ms *ModService) lockMod(modID string) (unlock func()) {
@@ -148,8 +186,11 @@ func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 	}
 
 	pack, _, ok := mod.GetPackage(packID)
-	if !ok || !slices.Contains([]StorageState{StorageWarm, StorageActive}, pack.Storage) {
-		return PackPreview{}, err
+	if !ok {
+		return PackPreview{}, errors.New("pack does not exist")
+	}
+	if !slices.Contains([]StorageState{StorageWarm, StorageActive}, pack.Storage) {
+		return PackPreview{}, errors.New("pack was not in warm or active")
 	}
 
 	paths, err := ms.packPaths(mod, pack)
@@ -159,12 +200,22 @@ func (ms *ModService) PreviewPack(modID, packID string) (PackPreview, error) {
 
 	baseModelMods := ms.getBaseModelMods(mod)
 
+	log.Println(baseModelMods)
+
 	payload, err := mod3d.ParseMod(
 		expectedPath(paths, pack.Storage),
 		nil,
 		baseModelMods,
 		mod3d.QualityHigh,
 	)
+
+	if payload == nil {
+		return PackPreview{
+			Payload: payload,
+			Mod:     mod,
+			Pack:    pack,
+		}, errors.New("no payload for preview")
+	}
 
 	return PackPreview{
 		Payload: payload,
@@ -192,40 +243,43 @@ func (ms *ModService) StartGame(tool ToolID) error {
 }
 
 func (ms *ModService) getBaseModelMods(mod ModSaved) []mod3d.BaseModelMod {
-	baseModelMods := []mod3d.BaseModelMod{}
+	result := []mod3d.BaseModelMod{}
+
 	mods, err := ms.Initial()
 	if err != nil {
-		return baseModelMods
+		log.Println("base model mods:", err)
+		return result
 	}
 
 	for _, m := range mods {
-
-		if m.ID == mod.ID {
+		if !isRelatedMod(mod, m) {
 			continue
 		}
-
-		sameCharacter := (m.CharacterId == mod.CharacterId && m.CharacterId != "")
-		sameCategory := (m.Submission.Category == mod.Submission.Category && m.Submission.Category != "")
-		if sameCategory || sameCharacter {
-			for _, p := range m.Packs {
-				paths, err := ms.packPaths(m, p)
-				if err != nil {
-					continue
-				}
-				baseModelMods = append(baseModelMods, mod3d.BaseModelMod{
-					Provider: m.Submission.Provider,
-					ModID:    mod.ID,
-					FileID:   p.FileID,
-					Name:     p.Name,
-					Path:     expectedPath(paths, p.Storage),
-				})
+		for _, p := range m.Packs {
+			paths, err := ms.packPaths(m, p)
+			if err != nil {
+				continue
 			}
+			result = append(result, mod3d.BaseModelMod{
+				Provider: m.Submission.Provider,
+				ModID:    m.ID,
+				FileID:   p.FileID,
+				Name:     p.Name,
+				Path:     expectedPath(paths, p.Storage),
+			})
 		}
 	}
 
-	log.Println("base model mods: ", baseModelMods)
+	return result
+}
 
-	return baseModelMods
+func isRelatedMod(mod, other ModSaved) bool {
+	if other.ID == mod.ID {
+		return false
+	}
+	sameCharacter := other.CharacterId != "" && other.CharacterId == mod.CharacterId
+	sameCategory := other.Submission.Category != "" && other.Submission.Category == mod.Submission.Category
+	return sameCharacter || sameCategory
 }
 
 func (ms *ModService) OpenWindow(path string) {
@@ -631,11 +685,12 @@ func (ms *ModService) Save(toolId ToolID, sub Submission, files []SubmissionFile
 		})
 	}
 
-	tool, local, hero, ok := ms.resolveModMeta(sub.Provider, sub.Category)
+	meta, ok := ms.resolveModMeta(sub.Provider, sub.Category)
 	if ok {
-		mod.ToolId = tool
-		mod.CharacterId = local
-		mod.Submission.Hero = &hero
+		mod.ToolId = meta.ToolID
+		mod.CharacterId = meta.CharacterID
+		mod.CharacterSource = "category"
+		mod.Submission.Hero = &meta.Hero
 	}
 
 	data, err := json.Marshal(mod)
@@ -655,25 +710,36 @@ func (ms *ModService) Save(toolId ToolID, sub Submission, files []SubmissionFile
 	return ms.downloadMod(ms.app.Context(), mod)
 }
 
-func (ms *ModService) resolveModMeta(providerID, category string) (toolID, local, hero string, ok bool) {
+type ModMeta struct {
+	ToolID      string
+	CharacterID string
+	Hero        string
+}
+
+func (ms *ModService) resolveModMeta(providerID, category string) (ModMeta, bool) {
 	if category == "" {
-		return "", "", "", false
+		return ModMeta{}, false
 	}
 
 	cfg, err := ms.FolderConfig()
 	if err != nil {
-		log.Printf("resolve character: %v", err)
-		return "", "", "", false
+		log.Printf("resolveModMeta: %v", err)
+		return ModMeta{}, false
 	}
 
 	for _, root := range cfg {
-		for charID, folder := range root.Characters.Characters {
-			if folder.Sources[providerID] == category {
-				return root.ID, charID, folder.Name, true
+		chars := root.Characters.Characters
+		for _, id := range slices.Sorted(maps.Keys(chars)) {
+			if chars[id].Sources[providerID] == category {
+				return ModMeta{
+					ToolID:      root.ID,
+					CharacterID: id,
+					Hero:        chars[id].Name,
+				}, true
 			}
 		}
 	}
-	return "", "", "", false
+	return ModMeta{}, false
 }
 
 func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
@@ -687,9 +753,9 @@ func (ms *ModService) Page(providerId, pageId string) (SubmissionPage, error) {
 		return p, err
 	}
 
-	if toolId, _, character, ok := ms.resolveModMeta(providerId, p.Submission.Category); ok {
-		p.ResolvedToolId = &toolId
-		p.Submission.Hero = &character
+	if meta, ok := ms.resolveModMeta(providerId, p.Submission.Category); ok {
+		p.ResolvedToolId = &meta.ToolID
+		p.Submission.Hero = &meta.Hero
 	}
 
 	log.Println("resolved", p.Submission.Hero, p.ResolvedToolId)

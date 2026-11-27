@@ -45,8 +45,8 @@ export interface SidebarProps {
   onselectmod?: (id: string) => void;
   onclosemod?: () => void;
   onunloadmod?: (id: string) => void;
-  onopenfolder?: (id: string) => void;
-  onopenlink?: (id: string) => void;
+  onopenfolder?: (mod: ModSaved) => void;
+  onopenlink?: (mod: ModSaved) => void;
   onvanillachange?: (value: boolean) => void;
   onTogglePack: (mod: ModSaved, value: Pack) => void;
   onstart?: () => void;

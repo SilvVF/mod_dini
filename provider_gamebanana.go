@@ -222,7 +222,7 @@ func MapCategoryRecord(record CategoryRecord) Submission {
 		Description:     "",
 		ProfileURL:      record.SProfileURL,
 		Category:        category,
-		Hero:            &record.ASubCategory.SName,
+		Hero:            nil,
 		IsAudio:         false,
 		IsMap:           false,
 		IsNSFW:          record.BHasContentRatings,

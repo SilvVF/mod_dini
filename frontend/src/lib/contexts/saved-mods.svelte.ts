@@ -13,7 +13,6 @@ import {
 } from "../bindings/changeme";
 import { compact } from "#lib/ts-ext.ts";
 import { appState } from "#lib/state/app.svelte.ts";
-import type { ModGroup } from "./group-mods";
 
 export interface SavedMods {
   mods: Record<string, ModSaved>;
@@ -24,7 +23,9 @@ export interface SavedMods {
   enablePkg(modId: string, id: string): void;
   toggleAllPkgs(id: string): void;
   remove(modID: string): void;
-  createPreset(name: string, toolId: string): void;
+  createPresetFromActivePacks(name: string, toolId: string): void;
+  createPreset(name: string, toolId: string, modIds?: string[]): void;
+  createPresetFromItems(name: string, toolId: string, items: PresetItem[]): void;
   removeFromPreset(presetId: number, modId: string): void;
   renamePreset(presetId: number, name: string): void;
   enablePreset(presetId: number): void;
@@ -98,7 +99,37 @@ export function setSavedModsContext(
       if (!preset) return;
       ModService.UpdatePreset(preset.id, name, preset.mods);
     },
-    createPreset(name: string, toolId: string) {
+    createPreset(name: string, toolId: string, modIds?: string[]): void {
+      const selectedIds = modIds ? new Set(modIds) : undefined;
+
+      const selectedMods = Object.values(this.mods).filter((mod) => {
+        if (mod.toolId !== toolId) return false;
+
+        if (selectedIds) return selectedIds.has(mod.id);
+
+        return mod.packages?.some(
+          (p) => p.storage === StorageState.StorageActive,
+        );
+      });
+
+      const presetItems: PresetItem[] = selectedMods.map((mod) => ({
+        modId: mod.id,
+        packIds:
+          mod.packages
+            ?.filter((p) => p.storage === StorageState.StorageActive)
+            .map((p) => p.id) ?? [],
+      }));
+
+      ModService.CreatePreset(toolId, name, presetItems);
+    },
+    createPresetFromItems(name: string, toolId: string, items: PresetItem[]) {
+      const valid = items.filter(
+        (item) => this.mods[item.modId]?.toolId === toolId,
+      );
+      if (valid.length === 0) return;
+      ModService.CreatePreset(toolId, name, valid);
+    },
+    createPresetFromActivePacks(name: string, toolId: string) {
       const enabled = Object.values(this.mods)
         .filter((m) => m.toolId === toolId)
         .filter((m) =>

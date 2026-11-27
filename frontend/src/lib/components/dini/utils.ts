@@ -74,3 +74,55 @@ export function buildPackageViews(
     };
   });
 }
+
+export type Matcher = {
+  host: RegExp;
+  route: (u: URL) => string | null;
+  link: (id: string) => string;
+};
+
+export const providers: Record<string, Matcher> = {
+  gamebanana: {
+    host: /(^|\.)gamebanana\.com$/,
+    route(u) {
+      const mod = u.pathname.match(/^\/mods\/(\d+)\/?$/);
+      if (mod) return `/mod/gamebanana/${mod[1]}`;
+      const cat = u.pathname.match(/^\/mods\/cats\/(\d+)\/?$/);
+      if (cat) return `/source/gamebanana/${cat[1]}${u.search}`;
+      return null;
+    },
+    link: (id) => `https://gamebanana.com/mods/${id}`,
+  },
+  huihui: {
+    host: /(^|\.)huihui648\.org$/,
+    route(u) {
+      const cat = u.pathname.match(/^\/category\/([^/]+)\/?$/);
+      if (cat) return `/source/huihui/${cat[1]}${u.search}`;
+      const post = u.pathname.match(/^\/([^/]+)\/?$/);
+      if (post && post[1] !== "category") return `/mod/huihui/${post[1]}`;
+      return null;
+    },
+    link: (id) => `https://huihui648.org/${encodeURIComponent(id)}/`,
+  },
+};
+
+export function providerRoute(raw: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+
+  for (const m of Object.values(providers)) {
+    if (m.host.test(u.hostname)) return m.route(u);
+  }
+  return null;
+}
+
+export function modLink(mod: ModSaved): string | null {
+  const { provider, submissionId, profileUrl } = mod.submission;
+  const link = providers[provider]?.link(submissionId);
+  return link ?? (profileUrl || null);
+}

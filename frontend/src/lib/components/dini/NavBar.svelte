@@ -10,21 +10,24 @@
   import { Button } from "#lib/components/ui/button/index.ts";
   import { ModService } from "#lib/bindings/changeme/index.ts";
   import { cn } from "#lib/utils.ts";
+  import { providerRoute } from "./utils";
 
   let { class: className }: { class?: string } = $props();
 
-  const pathOf = (u: URL) => u.pathname + u.search + u.hash;
+  type PathLike = { pathname: string; search: string; hash: string };
+  const pathOf = (u: PathLike) => u.pathname + u.search + u.hash;
+
+  const current = $derived(pathOf(page.url));
 
   let stack = $state<string[]>([]);
   let index = $state(-1);
 
-  afterNavigate((nav) => {
-    const navToUrl = nav.to?.url
-    const url = navToUrl ? pathOf(navToUrl) : page.url.pathname + page.url.search + page.url.hash;
+  afterNavigate(({ type, to }) => {
+    const url = pathOf(to?.url ?? page.url);
 
-    if (nav.type === "popstate" && nav.delta !== undefined && stack.length) {
-      index = Math.min(Math.max(index + nav.delta, 0), stack.length - 1);
-    } else if (nav.type === "enter" || index < 0) {
+    if (type === "popstate" && stack.length) {
+      index = Math.min(Math.max(index, 0), stack.length - 1);
+    } else if (type === "enter" || index < 0) {
       stack = [url];
       index = 0;
     } else if (stack[index] !== url) {
@@ -34,56 +37,51 @@
   });
 
   const canBack = $derived(index > 0);
-  const canForward = $derived(index >= 0 && index < stack.length - 1);
+  const canForward = $derived(index < stack.length - 1);
 
-  // ---- address bar ----
+  let draft = $derived(current);
   let inputEl = $state<HTMLInputElement | null>(null);
-  let editing = $state(false);
-  let draft = $state("");
 
-  const current = $derived(page.url.pathname + page.url.search + page.url.hash);
+  const openNewWindow = () => ModService.OpenWindow(current);
 
-  function submit() {
-    let target = draft.trim();
-    if (!target) return;
-    if (!target.startsWith("/")) target = "/" + target;
-    inputEl?.blur();
-    goto(target);
-  }
-
-  function openNewWindow() {
-    ModService.OpenWindow(current);
-  }
-
-  function handleWindowKeydown(e: KeyboardEvent) {
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === "l") {
+  function handleKeydown(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const key = e.key.toLowerCase();
+    if (key === "l") {
       e.preventDefault();
       inputEl?.focus();
-    } else if (mod && e.key.toLowerCase() === "n") {
+      inputEl?.select();
+    } else if (key === "n") {
       e.preventDefault();
       openNewWindow();
     }
   }
 
-  // Ctrl/Cmd+click or middle-click on an internal link opens it in a new window
-  function handleWindowClick(e: MouseEvent) {
+  // Ctrl/Cmd+click or middle-click on an internal link opens a new window
+  function handleClick(e: MouseEvent) {
     const wantsNewWindow =
       e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey));
-    if (!wantsNewWindow) return;
-    const a = (e.target as HTMLElement).closest("a");
-    const href = a?.getAttribute("href");
-    if (!a || !href?.startsWith("/")) return;
+    const href = (e.target as HTMLElement).closest("a")?.getAttribute("href");
+    if (!wantsNewWindow || !href?.startsWith("/")) return;
     e.preventDefault();
     e.stopPropagation();
     ModService.OpenWindow(href);
   }
+
+  function submit() {
+    const target = draft.trim();
+    if (!target) return;
+    inputEl?.blur();
+    goto(
+      providerRoute(target) ?? (target.startsWith("/") ? target : "/" + target),
+    );
+  }
 </script>
 
 <svelte:window
-  onkeydown={handleWindowKeydown}
-  onclickcapture={handleWindowClick}
-  onauxclickcapture={handleWindowClick}
+  onkeydown={handleKeydown}
+  onclickcapture={handleClick}
+  onauxclickcapture={handleClick}
 />
 
 <div class={cn("flex min-w-0 items-center gap-1", className)}>
@@ -123,16 +121,11 @@
 
   <input
     bind:this={inputEl}
-    value={editing ? draft : current}
+    bind:value={draft}
     class="bg-muted/60 text-muted-foreground focus:text-foreground h-8 min-w-0 flex-1 rounded-md border px-3 font-mono text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
     spellcheck="false"
-    oninput={(e) => (draft = e.currentTarget.value)}
-    onfocus={(e) => {
-      draft = current;
-      editing = true;
-      e.currentTarget.select();
-    }}
-    onblur={() => (editing = false)}
+    onfocus={(e) => e.currentTarget.select()}
+    onblur={() => (draft = current)}
     onkeydown={(e) => {
       if (e.key === "Enter") submit();
       else if (e.key === "Escape") inputEl?.blur();

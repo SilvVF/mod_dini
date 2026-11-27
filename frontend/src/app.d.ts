@@ -12,6 +12,7 @@ declare global {
     // interface Platform {}
     interface PageState {
       settings?: { category: Category };
+      preview?: { modId: string; packId: string };
     }
   }
 }

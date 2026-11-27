@@ -3,12 +3,8 @@
   import GameConfigView from "./GameConfigView.svelte";
   import ModConfigView from "./ModConfigView.svelte";
   import LaunchBar from "./LaunchBar.svelte";
-  import {
-    createMutation,
-    createQuery,
-    useQueryClient,
-  } from "@tanstack/svelte-query";
-  import { ModService, type ModKeybindUpdate } from "#lib/bindings/changeme/index.js";
+  import { getProcessContext } from "#lib/contexts/process.svelte.js";
+  import { tools } from "#lib/state/app.svelte.js";
 
   let {
     config,
@@ -24,6 +20,10 @@
   }: SidebarProps = $props();
 
   const activeCount = $derived(config.launchVanilla ? 0 : config.stats.loaded);
+  const processState = getProcessContext();
+  
+  const process = $derived(tools.find(t => t.id === config.game.id)?.process)
+  const gameRunning = $derived(process ? processState.running(process) : undefined)
 </script>
 
 <aside
@@ -47,8 +47,8 @@
             mod={selectedMod}
             onTogglePack={(pack) => onTogglePack(selectedMod, pack)}
             onclose={onclosemod}
-            onopenfolder={() => onopenfolder?.(selectedMod.id)}
-            onopenlink={() => onopenlink?.(selectedMod.id)}
+            onopenfolder={() => onopenfolder?.(selectedMod)}
+            onopenlink={() => onopenlink?.(selectedMod)}
           />
         {/key}
       {/if}
@@ -58,6 +58,7 @@
   <LaunchBar
     gameName={config.game.name}
     modCount={activeCount}
+    running={gameRunning}
     launchVanilla={config.launchVanilla}
     {onvanillachange}
     {onstart}
