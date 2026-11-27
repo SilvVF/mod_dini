@@ -562,6 +562,7 @@
 
       {#if submission.images && submission.images.length > 0}
         <Gallery
+          shouldBlur={true}
           images={submission.images}
           nsfwSettings={{ disableBlur: false, blurStrength: 16 }}
         />
@@ -598,13 +599,13 @@
       </Select.Root>
       {#if selectedPackPreviewId && previewQuery.data && previewQuery.data.payload}
         <div class="h-800px">
-        <ModViewer
-          mod={previewQuery.data.mod}
-          pack={previewQuery.data.pack}
-          payload={previewQuery.data.payload}
-          embedded={true}
-          onClose={() => {}}
-        />
+          <ModViewer
+            mod={previewQuery.data.mod}
+            pack={previewQuery.data.pack}
+            payload={previewQuery.data.payload}
+            embedded={true}
+            onClose={() => {}}
+          />
         </div>
       {/if}
     </TabsContent>

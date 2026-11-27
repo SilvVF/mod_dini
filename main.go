@@ -29,6 +29,7 @@ func init() {
 	application.RegisterEvent[ProcessEvent]("process-event")
 	application.RegisterEvent[Preset]("group-update")
 	application.RegisterEvent[uint64]("group-removed")
+	application.RegisterEvent[string]("ini-file-updated")
 }
 
 func main() {

@@ -183,6 +183,13 @@ func (ms *ModService) DefaultSettings() []Setting {
 		).
 			WithSection("General").
 			WithIcon("layout-grid"),
+		NewToggle(
+			"show.nsfw.images",
+			CategoryGeneral,
+			"Show nsfw images",
+			"shows nsfw images without bluring by default when enabled",
+			false,
+		).WithSection("General").WithIcon("eye"),
 		NewDropdown(
 			"appearance.theme",
 			CategoryAppearance,

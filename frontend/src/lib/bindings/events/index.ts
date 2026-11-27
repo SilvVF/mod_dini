@@ -19,6 +19,11 @@ export const GroupRemoved = "group-removed";
 export const GroupUpdate = "group-update";
 
 /**
+ * Name of the custom event "ini-file-updated".
+ */
+export const IniFileUpdated = "ini-file-updated";
+
+/**
  * Name of the custom event "mod-download-progress".
  */
 export const ModDownloadProgress = "mod-download-progress";

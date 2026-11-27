@@ -139,6 +139,8 @@ func (ks *KeybindStore) UpdateKey(u ModKeybindUpdate) error {
 		return errors.Join(errs...)
 	}
 
+	ks.ms.app.Event.Emit("ini-file-updated", mod.ID)
+
 	return nil
 }
 

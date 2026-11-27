@@ -23,23 +23,29 @@
   import { cn } from "#lib/utils.ts";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
   import type { ClassValue } from "svelte/elements";
+  import NSFWBlur from "./NSFWBlur.svelte";
 
   let {
     submission,
     onDownload,
-    class: className
+    class: className,
   }: {
     submission: Submission;
     /** Called when the user clicks Download (or Retry after a failed install). */
     onDownload?: (submission: Submission) => void;
-    class?: ClassValue | undefined | null; 
+    class?: ClassValue | undefined | null;
   } = $props();
 
   const saved = getSavedModsContext();
-
-  const local = $derived(saved.mods[`${submission.provider}:${submission.submissionId}`]);
+  const local = $derived(
+    saved.mods[`${submission.provider}:${submission.submissionId}`],
+  );
 
   const packs = $derived(local?.packages ?? []);
+
+  const detailsHref = $derived(
+    `/mod/${submission.provider}/${submission.slug}`,
+  );
 
   type DownloadStatus =
     | "none"
@@ -112,68 +118,68 @@
   class={cn(
     "group flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-card transition-colors hover:border-primary/50",
     status === "error" && "border-destructive/60",
-    className
+    className,
   )}
 >
-  <!-- Thumbnail -->
-  <a
-    data-sveltekit-preload-data="false"
-    href={`/mod/${submission.provider}/${submission.slug}`}
+  <div
     class={cn(
       local ? "opacity-75" : "",
       "relative block aspect-video overflow-hidden bg-muted",
     )}
   >
-    {#if submission.thumbnailUrl}
-      <img
-        src={submission.thumbnailUrl}
-        alt={submission.name}
-        loading="lazy"
-        class="size-full object-cover transition-transform duration-300 group-hover:scale-105"
-      />
-    {:else}
-      <div
-        class="flex size-full items-center justify-center text-sm text-muted-foreground"
-      >
-        No image available
-      </div>
-    {/if}
+    <a
+      data-sveltekit-preload-data="false"
+      href={detailsHref}
+      class="absolute inset-0 z-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      aria-label={submission.name}
+    ></a>
 
     <div
-      class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100"
-    ></div>
+      class="pointer-events-none relative z-10 size-full [&_button]:pointer-events-auto"
+    >
+      {#if submission.thumbnailUrl}
+        <NSFWBlur class="aspect-video w-full" isNSFW={submission.isNsfw}>
+          <img
+            src={submission.thumbnailUrl}
+            alt={submission.name}
+            loading="lazy"
+            class="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        </NSFWBlur>
+      {:else}
+        <div
+          class="flex size-full items-center justify-center text-sm text-muted-foreground"
+        >
+          No image available
+        </div>
+      {/if}
 
-    {#if submission.isNsfw || submission.isObsolete || submission.isTombstoned}
-      <div class="absolute left-2 top-2 flex flex-wrap gap-1.5">
-        {#if submission.isNsfw}
-          <Badge
-            variant="destructive"
-            class="border-0 bg-red-500/90 text-white"
-          >
-            NSFW
-          </Badge>
-        {/if}
+      <div
+        class="absolute inset-0 bg-linear-to-t from-black/50 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100"
+      ></div>
 
-        {#if submission.isObsolete}
-          <Badge
-            class="border-0 bg-yellow-500/90 text-black hover:bg-yellow-500/90"
-          >
-            Obsolete
-          </Badge>
-        {/if}
+      {#if submission.isObsolete || submission.isTombstoned}
+        <div class="absolute right-2 top-2 flex flex-wrap gap-1.5">
+          {#if submission.isObsolete}
+            <Badge
+              class="border-0 bg-yellow-500/90 text-black hover:bg-yellow-500/90"
+            >
+              Obsolete
+            </Badge>
+          {/if}
 
-        {#if submission.isTombstoned}
-          <Badge variant="secondary" class="border-0 bg-black/70 text-white">
-            Removed
-          </Badge>
-        {/if}
-      </div>
-    {/if}
-  </a>
+          {#if submission.isTombstoned}
+            <Badge variant="secondary" class="border-0 bg-black/70 text-white">
+              Removed
+            </Badge>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </div>
 
-  <!-- Content -->
   <div class="flex min-w-0 flex-1 flex-col gap-2 p-3">
-    <a href={`/mod/${submission.provider}/${submission.slug}`} class="min-w-0">
+    <a href={detailsHref} class="min-w-0">
       <h3
         class="truncate text-base font-semibold leading-tight tracking-tight transition-colors group-hover:text-primary"
         title={submission.name}

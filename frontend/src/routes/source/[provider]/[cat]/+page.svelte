@@ -23,6 +23,7 @@
   import type { PackageView } from "#lib/contexts/group-mods.ts";
   import FileSelectDialog from "#lib/components/dini/FileSelectDialog.svelte";
   import { getSavedModsContext } from "#lib/contexts/saved-mods.svelte.ts";
+  import { afterNavigate, goto } from "$app/navigation";
 
   const ROW_HEIGHT = 380;
   const GAP_X = 16;
@@ -33,12 +34,36 @@
   const provider = $derived(page.params.provider);
   const category = $derived(page.params.cat);
 
-  let searchInput = $state("");
-  let search = $state("");
-  let subcategory = $state("all");
-  let sortBy = $state("MostLiked");
-  let showNSFW = $state(true);
-  let showObsolete = $state(true);
+  const DEFAULTS: Record<string, string> = { sort: "MostLiked", sub: "all" };
+
+  const search = $derived(page.url.searchParams.get("q") ?? "");
+  const subcategory = $derived(
+    page.url.searchParams.get("sub") ?? DEFAULTS.sub,
+  );
+  const sortBy = $derived(page.url.searchParams.get("sort") ?? DEFAULTS.sort);
+  const showNSFW = $derived(page.url.searchParams.get("nsfw") !== "0");
+  const showObsolete = $derived(page.url.searchParams.get("obsolete") !== "0");
+
+  let searchInput = $state(page.url.searchParams.get("q") ?? "");
+
+  function setParams(patch: Record<string, string | null>, replace = false) {
+    const searchParams = page.url.searchParams.entries();
+    const params = new URLSearchParams(Object.fromEntries(searchParams));
+
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null || value === "" || value === DEFAULTS[key]) {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+    params.delete("page"); // filters changed, start from page 1
+
+    const qs = params.toString();
+    goto(`${page.url.pathname}${qs ? `?${qs}` : ""}`, {
+      replaceState: replace,
+    });
+  }
 
   const subcategories = $derived(page.data.subcategories);
 
@@ -58,7 +83,10 @@
   let dialogOpen = $state(false);
 
   const filesQuery = createQuery(() =>
-    submissionPageQuery(installTarget?.provider, installTarget?.submissionId ?? undefined),
+    submissionPageQuery(
+      installTarget?.provider,
+      installTarget?.submissionId ?? undefined,
+    ),
   );
 
   const installLocalMod = $derived(
@@ -115,9 +143,23 @@
     }),
   );
 
-  const filteredSubmissions = $derived(
+  const submissions = $derived(
     query.data?.pages?.map((p) => p.submissions ?? [])?.flat() ?? [],
   );
+
+  const filteredSubmissions = $derived.by(() => {
+    let filtered = submissions;
+    if (!showObsolete) {
+      filtered = filtered.filter((item) => !item.isObsolete);
+    }
+    if (!showNSFW) {
+      filtered = filtered.filter((item) => !item.isNsfw);
+    }
+
+    return filtered;
+  });
+
+  const hidden = $derived(submissions.length - filteredSubmissions.length);
 
   const rowCount = $derived(Math.ceil(filteredSubmissions.length / columns));
 
@@ -149,11 +191,16 @@
 
   // Debounce search input.
   $effect(() => {
-    const value = searchInput;
-    const timeout = setTimeout(() => (search = value), 300);
+    const value = searchInput.trim();
+    if (value === untrack(() => search)) return;
+    const timeout = setTimeout(() => setParams({ q: value }, true), 300);
     return () => clearTimeout(timeout);
   });
 
+  // Back/forward should update the text box too
+  afterNavigate((nav) => {
+    if (nav.type === "popstate") searchInput = search;
+  });
   // Keep the virtualizer in sync with the scroll element + row count, and
   // re-measure when the column count changes.
   $effect(() => {
@@ -213,6 +260,9 @@
         <h1 class="text-xl font-semibold tracking-tight">Browse submissions</h1>
         <p class="text-sm text-muted-foreground">
           {filteredSubmissions.length.toLocaleString()} submissions
+          {#if hidden > 0}
+            {hidden.toLocaleString()} hidden
+          {/if}
           {#if installTarget && filesQuery.isFetching}
             · Loading files…
           {:else if installTarget && filesQuery.isError}
@@ -249,7 +299,11 @@
           />
         </div>
 
-        <Select.Root type="single" bind:value={subcategory}>
+        <Select.Root
+          type="single"
+          value={subcategory}
+          onValueChange={(v) => setParams({ sub: v })}
+        >
           <Select.Trigger class="w-full md:w-50">
             <Select.Value placeholder="All characters" />
           </Select.Trigger>
@@ -268,7 +322,11 @@
           </Select.Content>
         </Select.Root>
 
-        <Select.Root type="single" bind:value={sortBy}>
+        <Select.Root
+          type="single"
+          value={sortBy}
+          onValueChange={(v) => setParams({ sort: v })}
+        >
           <Select.Trigger class="w-full md:w-50">
             <Select.Value placeholder="Sort by" />
           </Select.Trigger>
@@ -283,12 +341,18 @@
 
       <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
         <div class="flex items-center gap-2">
-          <Switch bind:checked={showNSFW} />
+          <Switch
+            checked={showNSFW}
+            onCheckedChange={(v) => setParams({ nsfw: v ? null : "0" })}
+          />
           <span class="text-sm text-muted-foreground">Show NSFW</span>
         </div>
 
         <div class="flex items-center gap-2">
-          <Switch bind:checked={showObsolete} />
+          <Switch
+            checked={showObsolete}
+            onCheckedChange={(v) => setParams({ obsolete: v ? null : "0" })}
+          />
           <span class="text-sm text-muted-foreground">Show obsolete</span>
         </div>
 
@@ -302,7 +366,6 @@
     </div>
   </div>
 
-  <!-- The only scroll container on the page. -->
   <div
     bind:this={container}
     bind:clientWidth={containerWidth}

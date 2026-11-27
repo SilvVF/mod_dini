@@ -460,7 +460,7 @@ type CategoryRecord struct {
 		SName       string `json:"_sName,omitempty"`
 		SProfileURL string `json:"_sProfileUrl,omitempty"`
 		SIconURL    string `json:"_sIconUrl,omitempty"`
-	} `json:"_aSubCategory,omitempty"`
+	} `json:"_aSubCategory"`
 	SVersion           string `json:"_sVersion,omitempty"`
 	BIsObsolete        bool   `json:"_bIsObsolete,omitempty"`
 	SInitialVisibility string `json:"_sInitialVisibility,omitempty"`
@@ -478,6 +478,6 @@ type CategoryResponse struct {
 		NRecordCount int  `json:"_nRecordCount,omitempty"`
 		BIsComplete  bool `json:"_bIsComplete,omitempty"`
 		NPerpage     int  `json:"_nPerpage,omitempty"`
-	} `json:"_aMetadata,omitempty"`
+	} `json:"_aMetadata"`
 	ARecords []CategoryRecord `json:"_aRecords,omitempty"`
 }

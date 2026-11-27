@@ -32,6 +32,7 @@
     useQueryClient,
   } from "@tanstack/svelte-query";
   import { ModService } from "#lib/bindings/changeme/index.js";
+  import { Events } from "@wailsio/runtime";
 
   let {
     mod,
@@ -75,9 +76,6 @@
     savedCtx.toggleAllPkgs(mod.id);
   }
 
-  // ---------------------------------------------------------------------------
-  // Keybinds
-  // ---------------------------------------------------------------------------
   const queryKey = $derived(["current_keybinds", mod.id]);
 
   const currentQuery = createQuery(() => ({
@@ -94,7 +92,15 @@
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   }));
 
-  // ---- key capture ----
+  $effect(() => {
+    const unsubscribe = Events.On("ini-file-updated", ({data}) => {
+      if (!data) return
+      queryClient.invalidateQueries({ queryKey: ["current_keybinds", data] })
+    })
+
+    return () => unsubscribe();
+  })
+
   let capturing = $state<{ packId: string; section: string } | undefined>();
   let heldKeys = $state<string[]>([]);
 
@@ -223,7 +229,6 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
   <Resizable.PaneGroup direction="vertical" class="min-h-0 flex-1">
-    <!-- Preview image: drag the handle below it to resize -->
     <Resizable.Pane
       defaultSize={imageSize}
       minSize={15}
@@ -312,7 +317,6 @@
             </p>
           </div>
 
-          <!-- Enabled -->
           <div
             class="bg-muted/60 flex items-center justify-between rounded-xl px-4 py-3.5"
           >
@@ -360,8 +364,6 @@
               </label>
             {/each}
           {/if}
-
-          <!-- Info -->
           <section class="space-y-3">
             <h3 class="text-muted-foreground text-xs">
               Info <span class="ml-1 opacity-70">saved automatically</span>
@@ -419,7 +421,6 @@
           </section>
         </div>
 
-        <!-- In-game keys -->
         <section class="px-5 pb-6">
           <div class="flex flex-wrap items-baseline gap-x-2">
             <h3

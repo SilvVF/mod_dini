@@ -14,6 +14,7 @@ declare module "@wailsio/runtime" {
         interface CustomEvents {
             "group-removed": number;
             "group-update": main$0.Preset;
+            "ini-file-updated": string;
             "mod-download-progress": main$0.DataProgress;
             "mod-removed": string;
             "mod-update": main$0.ModSaved;

@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -112,6 +114,16 @@ func thumbnailWithImages(media APreviewMedia) (*string, []string) {
 	return thumbnail, images
 }
 
+var NSFW_CONTENT_RATINGS = []string{
+	"st",
+	"sa",
+	"sc",
+	"ft",
+	"lp",
+	"pn",
+	"nu",
+}
+
 func MapModPageResponse(record ModPageResponse) (Submission, []SubmissionFile) {
 	submissionType := "Mod"
 	category := strconv.FormatInt(record.ACategory.IDRow, 10)
@@ -123,19 +135,21 @@ func MapModPageResponse(record ModPageResponse) (Submission, []SubmissionFile) {
 	thumbnail, images := thumbnailWithImages(record.APreviewMedia)
 
 	submission := Submission{
-		Provider:             "gamebanana",
-		SubmissionType:       submissionType,
-		SubmissionID:         strconv.Itoa(int(record.IDRow)),
-		Slug:                 extractSlug(record.SProfileURL, int(record.IDRow)),
-		Name:                 record.SName,
-		Author:               record.ASubmitter.SName,
-		Description:          record.SText,
-		ProfileURL:           record.SProfileURL,
-		Category:             category,
-		Hero:                 nil,
-		IsAudio:              false,
-		IsMap:                false,
-		IsNSFW:               len(record.AContentRatings) > 0,
+		Provider:       "gamebanana",
+		SubmissionType: submissionType,
+		SubmissionID:   strconv.Itoa(int(record.IDRow)),
+		Slug:           extractSlug(record.SProfileURL, int(record.IDRow)),
+		Name:           record.SName,
+		Author:         record.ASubmitter.SName,
+		Description:    record.SText,
+		ProfileURL:     record.SProfileURL,
+		Category:       category,
+		Hero:           nil,
+		IsAudio:        false,
+		IsMap:          false,
+		IsNSFW: slices.ContainsFunc(slices.Collect(maps.Keys(record.AContentRatings)), func(rating string) bool {
+			return slices.Contains(NSFW_CONTENT_RATINGS, rating)
+		}),
 		IsObsolete:           record.BIsObsolete,
 		IsTombstoned:         record.BIsTrashed || record.BIsWithheld,
 		IsHydrated:           true,

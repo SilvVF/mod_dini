@@ -15,7 +15,6 @@
 
   const pathOf = (u: URL) => u.pathname + u.search + u.hash;
 
-  // ---- history tracking (the History API can't tell us if "forward" exists) ----
   let stack = $state<string[]>([]);
   let index = $state(-1);
 
