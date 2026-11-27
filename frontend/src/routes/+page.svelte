@@ -373,6 +373,11 @@
     ModService.StartGame(toolId);
   }
 
+  function handleRetryInstall(mod: ModSaved) {
+    if (!mod.submissionFiles || !mod.packages) return;
+    saved.add(mod.submission, mod.submissionFiles, mod.packages);
+  }
+
   function handleWindowKeydown(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
       e.preventDefault();
@@ -406,6 +411,7 @@
     conflict={showConflictUi && conflictModIds.has(mod.id)}
     onClick={() => hanldeModCardClick(mod)}
     onSettings={() => {}}
+    onRetry={() => handleRetryInstall(mod)}
     onDelete={() => handleRemoveMod(mod)}
     onToggle={() => handleModToggle(mod)}
   />
