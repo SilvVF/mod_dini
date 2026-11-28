@@ -48,6 +48,14 @@
   const initial = appTheme.current === "default" ? "" : appTheme.current;
 
   onMount(() => {
+    const route = page.url.searchParams.get("route");
+
+    if (route?.startsWith("/") && !route.startsWith("//")) {
+      goto(route, { replaceState: true });
+    }
+  });
+
+  onMount(() => {
     appTheme.apply();
   });
 

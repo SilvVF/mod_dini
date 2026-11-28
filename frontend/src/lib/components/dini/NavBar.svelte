@@ -61,10 +61,24 @@
   function handleClick(e: MouseEvent) {
     const wantsNewWindow =
       e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey));
-    const href = (e.target as HTMLElement).closest("a")?.getAttribute("href");
-    if (!wantsNewWindow || !href?.startsWith("/")) return;
+
+    if (!wantsNewWindow) return;
+
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const anchor = target.closest("a");
+    if (!anchor) return;
+
+    const href = anchor.getAttribute("href");
+    if (!href) return;
+
+    // Only handle internal application routes
+    if (!href.startsWith("/") || href.startsWith("//")) return;
+
     e.preventDefault();
     e.stopPropagation();
+
     ModService.OpenWindow(href);
   }
 

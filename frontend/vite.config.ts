@@ -15,7 +15,7 @@ export default defineConfig({
         experimental: { async: true },
       },
       adapter: adapter({
-        fallback: "200.html",
+        fallback: "index.html",
       }),
       experimental: { remoteFunctions: true },
     }),

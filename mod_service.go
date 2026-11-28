@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -287,12 +288,22 @@ func (ms *ModService) OpenWindow(path string) {
 		path = "/" + path
 	}
 
-	application.Get().Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "Dini",
-		URL:    path, // served by the same asset handler as the main window
-		Width:  1280,
-		Height: 800,
-	})
+	u := url.URL{
+		Path: "/",
+	}
+
+	q := u.Query()
+	q.Set("route", path)
+	u.RawQuery = q.Encode()
+
+	ms.app.Window.NewWithOptions(
+		application.WebviewWindowOptions{
+			Title:  "Dini",
+			URL:    u.String(),
+			Width:  1280,
+			Height: 800,
+		},
+	)
 }
 
 func (ms *ModService) OpenKeybindsWindow() {
