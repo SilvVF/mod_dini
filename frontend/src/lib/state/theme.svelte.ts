@@ -1,4 +1,8 @@
-import { parseTweakcnCss, type ThemeVars } from "#lib/components/dini/theme-parse.ts";
+import { Events } from "@wailsio/runtime";
+import {
+  parseTweakcnCss,
+  type ThemeVars,
+} from "#lib/components/dini/theme-parse.ts";
 
 export const BUILT_IN_THEMES = [
   { id: "default", label: "Default" },
@@ -14,9 +18,15 @@ export interface CustomTheme {
   dark: ThemeVars;
 }
 
+interface ThemeSync {
+  current: ThemeId;
+  custom: CustomTheme[];
+}
+
 const THEME_KEY = "theme";
 const CUSTOM_KEY = "customThemes";
 const STYLE_ID = "custom-themes";
+const THEME_EVENT = "theme:changed";
 
 function readCustom(): CustomTheme[] {
   try {
@@ -34,7 +44,7 @@ const toRule = (selector: string, vars: ThemeVars) =>
 
 class ThemeState {
   custom = $state<CustomTheme[]>(readCustom());
-  current = $state<ThemeId>("default");
+  current = $state<ThemeId>(localStorage.getItem(THEME_KEY) ?? "default");
 
   all = $derived([
     ...BUILT_IN_THEMES,
@@ -42,18 +52,19 @@ class ThemeState {
   ]);
 
   constructor() {
-    const stored = localStorage.getItem(THEME_KEY) ?? "default";
-    const known =
-      BUILT_IN_THEMES.some((t) => t.id === stored) ||
-      this.custom.some((t) => t.id === stored);
-    this.current = known ? stored : "default";
     this.renderStyles();
+    this.apply();
+
+    Events.On(THEME_EVENT, (event) => {
+      this.receive(event.data as ThemeSync);
+    });
   }
 
   set(id: ThemeId) {
     this.current = id;
     localStorage.setItem(THEME_KEY, id);
-    this.apply();
+    this.apply(this.current);
+    this.broadcast();
   }
 
   // Parses pasted tweakcn CSS, saves it under `name` and switches to it.
@@ -77,7 +88,7 @@ class ThemeState {
     this.custom = [...this.custom, theme];
     this.persistCustom();
     this.renderStyles();
-    this.set(theme.id);
+    this.set(theme.id); // set() also broadcasts the updated custom list
     return theme;
   }
 
@@ -86,14 +97,16 @@ class ThemeState {
     this.persistCustom();
     this.renderStyles();
     if (this.current === id) this.set("default");
+    else this.broadcast();
   }
 
   // The default theme is the plain :root / .dark variables, so it has no attribute.
   // Pass an id to show a theme without saving it; omit it to show the saved one.
   apply(id: ThemeId = this.current) {
+    console.trace("apply()", JSON.stringify(id));
     const root = document.documentElement;
-    if (id === "default") delete root.dataset.theme;
-    else root.dataset.theme = id;
+    if (!id || id === "default") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", id);
   }
 
   preview(id: ThemeId) {
@@ -101,6 +114,27 @@ class ThemeState {
   }
 
   clearPreview() {
+    this.apply();
+  }
+
+  private broadcast() {
+    const payload: ThemeSync = {
+      current: this.current,
+      // $state.snapshot returns a plain object that can be serialized over IPC
+      custom: $state.snapshot(this.custom) as CustomTheme[],
+    };
+    void Events.Emit(THEME_EVENT, payload);
+  }
+
+  // Applies state pushed from another window. The sender has already written
+  // localStorage (shared per origin), so only update in-memory state and the DOM.
+  private receive({ current, custom }: ThemeSync) {
+    this.custom = custom;
+    this.renderStyles();
+    const known =
+      BUILT_IN_THEMES.some((t) => t.id === current) ||
+      custom.some((t) => t.id === current);
+    this.current = known ? current : "default";
     this.apply();
   }
 

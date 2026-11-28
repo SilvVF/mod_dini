@@ -39,13 +39,17 @@
   import NavBar from "#lib/components/dini/NavBar.svelte";
   import ModViewer from "#lib/components/viewer/ModViewer.svelte";
   import { toggleMode, ModeWatcher } from "mode-watcher";
-  import { onMount } from "svelte";
-  import { appTheme } from "#lib/state/theme.svelte.ts";
   import ThemeSelect from "#lib/components/dini/ThemeSelect.svelte";
+  import { appTheme } from "#lib/state/theme.svelte.ts";
+  import { onMount } from "svelte";
 
   let { children, data }: LayoutProps = $props();
 
-  onMount(() => appTheme.apply());
+  const initial = appTheme.current === "default" ? "" : appTheme.current;
+
+  onMount(() => {
+    appTheme.apply();
+  });
 
   setSavedModsContext(
     () => data.mods,
@@ -125,7 +129,7 @@
   <link rel="icon" href={favicon} />
 </svelte:head>
 
-<ModeWatcher />
+<ModeWatcher defaultTheme={initial} />
 <QueryClientProvider client={queryClient}>
   <div class="flex flex-col overflow-clip">
     <header
